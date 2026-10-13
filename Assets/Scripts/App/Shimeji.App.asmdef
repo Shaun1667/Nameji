@@ -1,0 +1,23 @@
+{
+    "name": "Shimeji.App",
+    "rootNamespace": "Shimeji.App",
+    "references": [
+        "Shimeji.Core",
+        "Shimeji.Platform.Win32",
+        "Shimeji.Characters",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [
+        "Editor",
+        "WindowsStandalone32",
+        "WindowsStandalone64"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

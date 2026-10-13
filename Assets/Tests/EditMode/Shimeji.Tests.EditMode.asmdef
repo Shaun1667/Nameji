@@ -1,0 +1,29 @@
+{
+    "name": "Shimeji.Tests.EditMode",
+    "rootNamespace": "Shimeji.Tests",
+    "references": [
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner",
+        "Shimeji.Core",
+        "Shimeji.Characters",
+        "Shimeji.Platform.Win32",
+        "Shimeji.Editor",
+        "UniGLTF",
+        "UniGLTF.Utils"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

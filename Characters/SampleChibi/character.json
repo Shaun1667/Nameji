@@ -1,0 +1,8 @@
+{
+  "displayName": "Sample Chibi",
+  "heightPixels": 150,
+  "rigType": "auto",
+  "behaviorProfile": "default",
+  "enableSpringBones": true,
+  "colliderPreset": "chibi"
+}

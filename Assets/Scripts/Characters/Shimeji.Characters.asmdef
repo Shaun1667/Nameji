@@ -1,0 +1,20 @@
+{
+    "name": "Shimeji.Characters",
+    "rootNamespace": "Shimeji.Characters",
+    "references": [
+        "Shimeji.Core",
+        "UniGLTF",
+        "VRM10",
+        "UniHumanoid",
+        "UniGLTF.Utils"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

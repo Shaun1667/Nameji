@@ -1,0 +1,23 @@
+{
+    "name": "Shimeji.Editor",
+    "rootNamespace": "Shimeji.EditorTools",
+    "references": [
+        "Shimeji.Core",
+        "Shimeji.Characters",
+        "Shimeji.App",
+        "UniGLTF",
+        "UniGLTF.Editor",
+        "UniGLTF.Utils"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

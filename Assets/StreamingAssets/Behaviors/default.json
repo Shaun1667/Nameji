@@ -1,0 +1,48 @@
+// 기본 행동 프로필. character.json의 "behaviorProfile"로 다른 파일(<이름>.json)을 고를 수 있다.
+// conditions: BlockedLeft, BlockedRight, EdgeLeft, EdgeRight, NearEdge, WallAdjacent, JumpTarget,
+//             OnWindow, Sleepy, AtWallTop, AtWallBottom  ('!' 접두사 = 부정)
+// motion: Stand, Walk, Climb, Crawl, Jump, Drop / direction: Keep, Left, Right, Random, TowardWall, Opposite
+// weight 0 = 시스템 행동 (Fall, Land, Held, Thrown, ClickReact, DoubleClickReact) — 랜덤 선택 안 됨
+{
+  "behaviors": [
+    { "id": "Idle",        "animationKey": "Idle",           "requiredState": "Grounded", "weight": 3,   "durationRange": [2, 5] },
+    { "id": "LookAround",  "animationKey": "IdleLookAround", "requiredState": "Grounded", "weight": 1.2, "durationRange": [3, 5] },
+    { "id": "WalkLeft",    "animationKey": "Walk", "requiredState": "Grounded", "motion": "Walk", "direction": "Left",
+      "weight": 3, "durationRange": [2, 7], "moveSpeedRange": [45, 75], "conditions": ["!BlockedLeft"] },
+    { "id": "WalkRight",   "animationKey": "Walk", "requiredState": "Grounded", "motion": "Walk", "direction": "Right",
+      "weight": 3, "durationRange": [2, 7], "moveSpeedRange": [45, 75], "conditions": ["!BlockedRight"] },
+    { "id": "Run",         "animationKey": "Run",  "requiredState": "Grounded", "motion": "Walk", "direction": "Random",
+      "weight": 0.6, "durationRange": [1, 2.5], "moveSpeedRange": [150, 210], "cooldown": 20 },
+    { "id": "Sit",         "animationKey": "Sit",     "requiredState": "Grounded", "weight": 1.2, "durationRange": [5, 12] },
+    { "id": "SitOnEdge",   "animationKey": "SitEdge", "requiredState": "Grounded", "allowedSurfaces": ["WindowTop"],
+      "weight": 4, "durationRange": [6, 14], "conditions": ["NearEdge"] },
+    { "id": "Sleep",       "animationKey": "Sleep",   "requiredState": "Grounded", "weight": 0.15, "idleWeightPerMinute": 0.6,
+      "durationRange": [12, 40], "cooldown": 30 },
+    { "id": "Wave",        "animationKey": "Wave",  "requiredState": "Grounded", "weight": 0.5, "durationRange": [1.5, 3], "cooldown": 15 },
+    { "id": "Dance",       "animationKey": "Dance", "requiredState": "Grounded", "weight": 0.25, "durationRange": [3, 6], "cooldown": 40 },
+    { "id": "JumpUp",      "animationKey": "Jump",  "requiredState": "Grounded", "motion": "Jump", "weight": 1.5,
+      "conditions": ["JumpTarget"], "cooldown": 6 },
+    { "id": "ClimbWall",   "animationKey": "ClimbWall", "requiredState": "Grounded", "motion": "Climb", "direction": "TowardWall",
+      "weight": 4, "durationRange": [6, 14], "moveSpeedRange": [40, 70], "conditions": ["WallAdjacent"] },
+
+    { "id": "ClimbUp",     "animationKey": "ClimbWall", "requiredState": "WallAttached", "motion": "Climb", "direction": "TowardWall",
+      "weight": 3, "durationRange": [3, 8], "moveSpeedRange": [40, 70], "conditions": ["!AtWallTop"] },
+    { "id": "ClimbDown",   "animationKey": "ClimbWall", "requiredState": "WallAttached", "motion": "Climb", "direction": "TowardWall",
+      "weight": 1, "durationRange": [2, 5], "moveSpeedRange": [-60, -40], "conditions": ["!AtWallBottom"] },
+    { "id": "WallRest",    "animationKey": "ClimbWall", "requiredState": "WallAttached", "direction": "TowardWall",
+      "weight": 1, "durationRange": [1, 3] },
+    { "id": "WallLetGo",   "animationKey": "Fall", "requiredState": "WallAttached", "motion": "Drop", "weight": 0.6 },
+
+    { "id": "HangCeiling", "animationKey": "HangCeiling",  "requiredState": "CeilingAttached", "weight": 2, "durationRange": [2, 5] },
+    { "id": "CrawlCeiling","animationKey": "CrawlCeiling", "requiredState": "CeilingAttached", "motion": "Crawl", "direction": "Random",
+      "weight": 3, "durationRange": [3, 8], "moveSpeedRange": [30, 55] },
+    { "id": "CeilingLetGo","animationKey": "Fall", "requiredState": "CeilingAttached", "motion": "Drop", "weight": 1 },
+
+    { "id": "Fall",        "animationKey": "Fall",     "requiredState": "Airborne", "weight": 0, "durationRange": [999, 999] },
+    { "id": "Thrown",      "animationKey": "Thrown",   "requiredState": "Airborne", "weight": 0, "durationRange": [999, 999] },
+    { "id": "Land",        "animationKey": "Land",     "requiredState": "Grounded", "weight": 0, "durationRange": [0.35, 0.45], "interruptible": false },
+    { "id": "Held",        "animationKey": "Dragged",  "requiredState": "Held",     "weight": 0, "durationRange": [999, 999] },
+    { "id": "ClickReact",  "animationKey": "ClickReact","requiredState": "Grounded","weight": 0, "durationRange": [1.2, 1.5], "interruptible": false },
+    { "id": "DoubleClickReact", "animationKey": "Dance", "requiredState": "Grounded", "weight": 0, "durationRange": [3, 4] }
+  ]
+}
