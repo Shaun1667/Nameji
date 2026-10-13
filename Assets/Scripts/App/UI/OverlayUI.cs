@@ -17,17 +17,20 @@ namespace Shimeji.App.UI
         readonly Font _font;
         public ContextMenuView Menu { get; }
 
-        public OverlayUI()
+        public OverlayUI(Camera camera)
         {
             var go = new GameObject("OverlayUI");
             UnityEngine.Object.DontDestroyOnLoad(go);
             Canvas = go.AddComponent<Canvas>();
-            Canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            // 카메라 렌더 텍스처(ULW 백엔드)에 같이 그려지도록 Screen Space - Camera
+            Canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            Canvas.worldCamera = camera;
+            Canvas.planeDistance = 10f;
             Canvas.sortingOrder = 100;
             var scaler = go.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
             _font = LoadFont();
-            Menu = new ContextMenuView(Canvas.transform, _font);
+            Menu = new ContextMenuView(Canvas.transform, _font, camera);
         }
 
         static Font LoadFont()
@@ -79,13 +82,15 @@ namespace Shimeji.App.UI
 
         readonly RectTransform _panel;
         readonly Font _font;
+        readonly Camera _cam;
         readonly List<(RectTransform rt, Image bg, Action action)> _items = new List<(RectTransform, Image, Action)>();
         public int TargetRuntimeId { get; private set; } = -1;
         public bool IsOpen => _panel.gameObject.activeSelf;
 
-        public ContextMenuView(Transform canvas, Font font)
+        public ContextMenuView(Transform canvas, Font font, Camera cam)
         {
             _font = font;
+            _cam = cam;
             var go = new GameObject("ContextMenu", typeof(RectTransform));
             go.transform.SetParent(canvas, false);
             _panel = (RectTransform)go.transform;
@@ -122,8 +127,8 @@ namespace Shimeji.App.UI
                 _items.Add((rt, bg, items[i].Action));
             }
             // 화면 밖으로 나가지 않게
-            float x = Mathf.Clamp(overlayScreenPos.x, 0, Screen.width - Width);
-            float y = Mathf.Clamp(overlayScreenPos.y, h, Screen.height);
+            float x = Mathf.Clamp(overlayScreenPos.x, 0, _cam.pixelWidth - Width);
+            float y = Mathf.Clamp(overlayScreenPos.y, h, _cam.pixelHeight);
             _panel.anchoredPosition = new Vector2(x, y);
             _panel.gameObject.SetActive(true);
         }
@@ -135,13 +140,13 @@ namespace Shimeji.App.UI
         }
 
         public bool Contains(Vector2 overlayScreenPos) =>
-            IsOpen && RectTransformUtility.RectangleContainsScreenPoint(_panel, overlayScreenPos, null);
+            IsOpen && RectTransformUtility.RectangleContainsScreenPoint(_panel, overlayScreenPos, _cam);
 
         public void UpdateHover(Vector2 overlayScreenPos)
         {
             if (!IsOpen) return;
             foreach (var it in _items)
-                it.bg.color = RectTransformUtility.RectangleContainsScreenPoint(it.rt, overlayScreenPos, null) ? Hover : Color.clear;
+                it.bg.color = RectTransformUtility.RectangleContainsScreenPoint(it.rt, overlayScreenPos, _cam) ? Hover : Color.clear;
         }
 
         /// <summary>메뉴 클릭 처리. 항목을 눌렀으면 실행 후 닫는다.</summary>
@@ -150,7 +155,7 @@ namespace Shimeji.App.UI
             if (!IsOpen) return;
             foreach (var it in _items)
             {
-                if (!RectTransformUtility.RectangleContainsScreenPoint(it.rt, overlayScreenPos, null)) continue;
+                if (!RectTransformUtility.RectangleContainsScreenPoint(it.rt, overlayScreenPos, _cam)) continue;
                 var action = it.action;
                 Close();
                 try { action?.Invoke(); }
@@ -208,6 +213,17 @@ namespace Shimeji.App.UI
         }
 
         public bool Visible => _rt.gameObject.activeSelf;
+
+        /// <summary>오버레이 스크린 좌표(아래가 0) 사각형.</summary>
+        public Rect ScreenRect
+        {
+            get
+            {
+                var p = _rt.anchoredPosition;
+                var s = _rt.sizeDelta;
+                return new Rect(p.x - s.x * 0.5f, p.y, s.x, s.y);
+            }
+        }
 
         public void Destroy()
         {

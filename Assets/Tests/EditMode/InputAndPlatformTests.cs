@@ -110,7 +110,9 @@ namespace Shimeji.Tests
             Assert.IsFalse(float.IsNaN(pos.X));
             p.IsLeftButtonDown();
             p.IsRightButtonDown();
-            OverlayWindow.IsFullscreenAppActive();
+            OverlayWindow.IsFullscreenAppActive(System.IntPtr.Zero);
+            var r = OverlayWindow.OverlayRectFor(new RectPx(-100, 0, 1920, 1080));
+            Assert.AreEqual(new RectPx(-100, 1, 1920, 1079), r);
         }
 
         [Test]

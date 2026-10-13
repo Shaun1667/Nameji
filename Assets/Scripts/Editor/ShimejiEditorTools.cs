@@ -89,7 +89,8 @@ namespace Shimeji.EditorTools
             PlayerSettings.defaultScreenWidth = 256;
             PlayerSettings.defaultScreenHeight = 256;
             PlayerSettings.allowFullscreenSwitch = false;
-            PlayerSettings.useFlipModelSwapchain = false; // 켜져 있으면 투명이 안 된다
+            // 켜져 있으면 DWM 알파 투명이 안 된다 (진단용: 환경변수 SHIMEJI_FLIP=1)
+            PlayerSettings.useFlipModelSwapchain = Environment.GetEnvironmentVariable("SHIMEJI_FLIP") == "1";
             PlayerSettings.forceSingleInstance = true;
             PlayerSettings.usePlayerLog = true;
             PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.StandaloneWindows64, false);
@@ -107,7 +108,8 @@ namespace Shimeji.EditorTools
             }
 
             SetLayerName(8, "Character");
-            AddAlwaysIncludedShaders("Standard", "UniGLTF/UniUnlit", "VRM10/MToon10", "Hidden/Internal-Colored", "UI/Default");
+            // Hidden/Internal-Colored, UI/Default는 내장 리소스라 항상 포함됨 (목록에 넣으면 빌드가 실패한다)
+            AddAlwaysIncludedShaders("Standard", "UniGLTF/UniUnlit", "VRM10/MToon10");
             AssetDatabase.SaveAssets();
             Debug.Log("[Shimeji] project settings configured");
         }

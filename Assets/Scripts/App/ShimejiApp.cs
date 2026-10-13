@@ -42,13 +42,21 @@ namespace Shimeji.App
         public bool Ready { get; private set; }
         public bool PausedAll { get; private set; }
         public bool HiddenForFullscreen { get; private set; }
-        public OverlayWindow Overlay => _overlay;
+        /// <summary>현재 오버레이 창 백엔드 (빌드에서만, 에디터는 null).</summary>
+        public IOverlayWindow Overlay => _window;
+        public LayeredPresenter Presenter => _presenter;
+        public bool MenuOpen => _ui != null && _ui.Menu.IsOpen;
+        public bool TrayRunning => _tray != null && _tray.IsRunning;
         public ClickThroughController ClickThrough => _clickThrough;
 
         string _settingsPath;
         IDesktopApi _desktop;
         IPointerApi _pointer;
-        OverlayWindow _overlay;
+        OverlayWindow _unityWindow;      // Unity 플레이어 창 (DWM 백엔드에서는 이것이 오버레이)
+        LayeredOverlayWindow _layered;   // ULW 백엔드 창
+        LayeredPresenter _presenter;
+        IOverlayWindow _window;          // 활성 백엔드
+        bool _useLayered = true;
         bool _isRealOverlay;
         long _selfHwnd;
         int _selfPid;
@@ -78,6 +86,8 @@ namespace Shimeji.App
         float _cursorAlpha;
         int _cloneCounter;
         bool _quitting;
+        RectPx? _testRect;
+        bool _diagSkipOverlay, _diagNoResize;
 
         // ======================================================================
         // 시작
@@ -137,11 +147,41 @@ namespace Shimeji.App
 #else
             _desktop = new Win32DesktopApi();
             _pointer = new Win32PointerApi();
-            _overlay = new OverlayWindow();
+            _unityWindow = new OverlayWindow();
             _isRealOverlay = true;
             _selfPid = (int)OverlayWindow.CurrentProcessId;
+            ParseOverlayArgs();
 #endif
             _testHooks = TestHooks.CreateIfRequested(this);
+        }
+
+        /// <summary>
+        /// 실행 인자: -overlay-backend layered|dwm (기본 layered),
+        /// 진단용: -overlay-mode N (DWM 백엔드 OverlayMode), -overlay-rect x,y,w,h (오버레이를 일부 영역으로 제한).
+        /// </summary>
+        void ParseOverlayArgs()
+        {
+            var args = Environment.GetCommandLineArgs();
+            foreach (var a in args)
+            {
+                if (a == "-overlay-nohide") _unityWindow.HideWhileRestyling = false;
+                if (a == "-overlay-keepstyle") _unityWindow.ChangeStyle = false;
+                if (a == "-overlay-skip") _diagSkipOverlay = true;
+                if (a == "-overlay-noresize") _diagNoResize = true;
+            }
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "-overlay-mode" && int.TryParse(args[i + 1], out int mode))
+                    _unityWindow.Mode = (OverlayMode)mode;
+                if (args[i] == "-overlay-backend")
+                    _useLayered = !string.Equals(args[i + 1], "dwm", StringComparison.OrdinalIgnoreCase);
+                if (args[i] == "-overlay-rect")
+                {
+                    var p = args[i + 1].Split(',');
+                    if (p.Length == 4)
+                        _testRect = RectPx.FromXYWH(float.Parse(p[0]), float.Parse(p[1]), float.Parse(p[2]), float.Parse(p[3]));
+                }
+            }
         }
 
         void ConfigureCamera()
@@ -168,7 +208,7 @@ namespace Shimeji.App
         IEnumerator Start()
         {
             if (_quitting) yield break;
-            _ui = new OverlayUI();
+            _ui = new OverlayUI(MainCamera);
             LoadProfiles();
 
             // 플레이어 창이 완전히 만들어질 때까지 대기
@@ -179,22 +219,40 @@ namespace Shimeji.App
             var bounds = OverlayBounds();
             Space = new ScreenSpace(bounds);
 
-            if (_isRealOverlay)
+            if (_isRealOverlay && _useLayered)
             {
-                Screen.SetResolution((int)bounds.Width, (int)bounds.Height, FullScreenMode.Windowed);
+                // ULW 백엔드: Unity 창은 숨기고, 카메라 → RenderTexture → 레이어드 창으로 올린다.
+                Screen.SetResolution(64, 64, FullScreenMode.Windowed);
                 yield return null;
                 yield return null;
-                if (_overlay.MakeOverlay(bounds, Settings.AlwaysOnTop))
+                _unityWindow.HideUnityWindow(bounds);
+                _layered = new LayeredOverlayWindow();
+                if (_layered.Create(bounds, Settings.AlwaysOnTop))
                 {
-                    _selfHwnd = _overlay.Hwnd.ToInt64();
+                    _window = _layered;
+                    _presenter = new LayeredPresenter(MainCamera, _layered);
                 }
                 else
                 {
-                    Log.UserError("투명 오버레이 창을 만들지 못했습니다. 일반 창으로 동작합니다.");
+                    Log.UserError("레이어드 오버레이 창을 만들지 못해 DWM 방식으로 전환합니다.");
+                    _layered.Dispose();
+                    _layered = null;
+                    _useLayered = false;
                 }
+            }
+            if (_isRealOverlay && !_useLayered)
+            {
+                if (!_diagNoResize) Screen.SetResolution((int)bounds.Width, (int)bounds.Height, FullScreenMode.Windowed);
+                yield return null;
+                yield return null;
+                if (_diagSkipOverlay) Log.Warn("diagnostic: overlay styling skipped");
+                else if (_unityWindow.MakeOverlay(bounds, Settings.AlwaysOnTop)) _window = _unityWindow;
+                else Log.UserError("투명 오버레이 창을 만들지 못했습니다. 일반 창으로 동작합니다.");
                 yield return null;
                 Log.Info($"Screen after overlay: {Screen.width}x{Screen.height} (expected {bounds.Width}x{bounds.Height})");
             }
+            if (_window != null) _selfHwnd = _window.Hwnd.ToInt64();
+            Log.Info($"overlay backend: {(_presenter != null ? "UpdateLayeredWindow" : _window != null ? "DWM" : "none")}");
             UpdateCamera();
 
             _debug.World = World;
@@ -215,9 +273,10 @@ namespace Shimeji.App
 
         RectPx OverlayBounds()
         {
+            if (_testRect.HasValue) return _testRect.Value;
             var b = World.VirtualBounds;
             if (b.IsEmpty) b = new RectPx(0, 0, Screen.width, Screen.height);
-            return b;
+            return _isRealOverlay ? OverlayWindow.OverlayRectFor(b) : b;
         }
 
         void UpdateCamera()
@@ -288,10 +347,11 @@ namespace Shimeji.App
             {
                 Log.Info($"display layout changed: {Space.Overlay} → {bounds}");
                 Space.SetOverlay(bounds);
-                if (_isRealOverlay)
+                if (_isRealOverlay && _window != null)
                 {
-                    Screen.SetResolution((int)bounds.Width, (int)bounds.Height, FullScreenMode.Windowed);
-                    _overlay.SetBounds(bounds);
+                    if (_presenter == null) Screen.SetResolution((int)bounds.Width, (int)bounds.Height, FullScreenMode.Windowed);
+                    _window.SetBounds(bounds);
+                    _presenter?.Resize();
                 }
                 UpdateCamera();
             }
@@ -299,14 +359,14 @@ namespace Shimeji.App
 
         void CheckFullscreen(float dt)
         {
-            if (!_isRealOverlay) return;
+            if (!_isRealOverlay || _window == null) return;
             _fullscreenTimer += dt;
             if (_fullscreenTimer < 1f) return;
             _fullscreenTimer = 0;
-            bool fs = Settings.HideOnFullscreen && OverlayWindow.IsFullscreenAppActive();
+            bool fs = Settings.HideOnFullscreen && OverlayWindow.IsFullscreenAppActive(_window.Hwnd);
             if (fs == HiddenForFullscreen) return;
             HiddenForFullscreen = fs;
-            _overlay.SetVisible(!fs);
+            _window.SetVisible(!fs);
             MainCamera.enabled = !fs;
             Log.Info(fs ? "fullscreen app detected: hiding overlay" : "fullscreen app gone: showing overlay");
         }
@@ -322,7 +382,7 @@ namespace Shimeji.App
 
             if (HiddenForFullscreen)
             {
-                _overlay?.SetClickThrough(true);
+                _window?.SetClickThrough(true);
                 return;
             }
 
@@ -331,7 +391,7 @@ namespace Shimeji.App
             int hit = overMenu ? MenuTargetId : HitTestCharacters(cursor);
 
             bool capture = _clickThrough.Update(hit >= 0, left || right);
-            _overlay?.SetClickThrough(!capture);
+            _window?.SetClickThrough(!capture);
 
             // 메뉴 바깥을 누르면 메뉴 닫기
             if (left && !_leftWasDown && _ui.Menu.IsOpen && !overMenu) _ui.Menu.Close();
@@ -348,7 +408,10 @@ namespace Shimeji.App
             if (_actors.Count == 0) return -1;
             if (Settings.HitTest == HitTestMode.Alpha && _isRealOverlay)
             {
-                if (_cursorAlpha < 0.05f) return -1;
+                float alpha = _presenter != null
+                    ? _presenter.AlphaAt((int)(cursor.X - Space.Overlay.Left), (int)(cursor.Y - Space.Overlay.Top))
+                    : _cursorAlpha;
+                if (alpha < 0.05f) return -1;
                 CharacterActor best = null;
                 foreach (var a in _actors)
                     if (a.ScreenRect.Expanded(10).Contains(cursor) && (best == null || a.Depth < best.Depth)) best = a;
@@ -463,7 +526,7 @@ namespace Shimeji.App
             if (_topmostTimer > 2f)
             {
                 _topmostTimer = 0;
-                if (_isRealOverlay && Settings.AlwaysOnTop && !HiddenForFullscreen) _overlay.ReassertTopmost();
+                if (_window != null && Settings.AlwaysOnTop && !HiddenForFullscreen) _window.SetTopmost(true);
             }
             _saveTimer += dt;
             if (_saveTimer > 30f)
@@ -485,8 +548,40 @@ namespace Shimeji.App
         // 알파 히트테스트: 프레임 끝에 커서 아래 픽셀 1개만 읽는다.
         void LateUpdate()
         {
-            if (Ready && Settings.HitTest == HitTestMode.Alpha && _isRealOverlay && !HiddenForFullscreen)
+            if (!Ready) return;
+            UpdatePresenterRegions();
+            if (_presenter == null && Settings.HitTest == HitTestMode.Alpha && _isRealOverlay && !HiddenForFullscreen)
                 StartCoroutine(SampleAlpha());
+        }
+
+        readonly List<RectInt> _regions = new List<RectInt>();
+
+        /// <summary>ULW 백엔드가 읽어 올릴 영역: 캐릭터 주변 + 말풍선 + 메뉴 (창 좌표, 위가 0).</summary>
+        void UpdatePresenterRegions()
+        {
+            if (_presenter == null) return;
+            _regions.Clear();
+            var ov = Space.Overlay;
+            foreach (var a in _actors)
+            {
+                float h = a.Body.Height;
+                float half = h * 0.85f + 8f;
+                float cx = a.Body.Position.X - ov.Left, cy = a.Body.Position.Y - h * 0.5f - ov.Top;
+                _regions.Add(new RectInt((int)(cx - half), (int)(cy - half), (int)(half * 2), (int)(half * 2)));
+            }
+            int H = (int)ov.Height;
+            foreach (var b in _bubbles.Values)
+            {
+                if (!b.Visible) continue;
+                var r = b.ScreenRect;
+                _regions.Add(new RectInt((int)r.xMin - 4, H - (int)r.yMax - 4, (int)r.width + 8, (int)r.height + 8));
+            }
+            if (_ui.Menu.IsOpen)
+            {
+                var m = _ui.Menu.ScreenRectOverlay;
+                _regions.Add(new RectInt((int)m.Left - 4, H - (int)m.Bottom - 4, (int)m.Width + 8, (int)m.Height + 8));
+            }
+            _presenter.SetRegions(_regions, Settings.ShowDebugSurfaces);
         }
 
         IEnumerator SampleAlpha()
@@ -813,7 +908,7 @@ namespace Shimeji.App
                 case Cmd.ActivityActive: SetActivity(ActivityLevel.Active); break;
                 case Cmd.AlwaysOnTop:
                     Settings.AlwaysOnTop = !Settings.AlwaysOnTop;
-                    _overlay?.SetTopmost(Settings.AlwaysOnTop);
+                    _window?.SetTopmost(Settings.AlwaysOnTop);
                     break;
                 case Cmd.Pause: SetPaused(!PausedAll); break;
                 case Cmd.LookAt:
@@ -918,6 +1013,8 @@ namespace Shimeji.App
             Log.Info("quit");
             _tray?.Dispose();
             _watcher?.Dispose();
+            _presenter?.Dispose();
+            _layered?.Dispose();
             _testHooks?.Dispose();
             _singleInstance?.Dispose();
             Log.UserVisibleError -= OnUserVisibleError;

@@ -15,9 +15,18 @@ namespace Shimeji.App.UI
         public readonly List<RectPx> CharacterRects = new List<RectPx>();
 
         Material _mat;
+        Camera _cam;
 
-        void OnPostRender()
+        // Camera.onPostRender는 구독 순서대로 호출된다. Awake에서 구독해 LayeredPresenter(나중에 구독)의 읽기 전에 그린다.
+        void Awake()
         {
+            _cam = GetComponent<Camera>();
+            Camera.onPostRender += Draw;
+        }
+
+        void Draw(Camera cam)
+        {
+            if (cam != _cam) return;
             if ((!ShowSurfaces && !ShowFakeWindows) || World == null || Space == null) return;
             if (_mat == null)
             {
@@ -81,6 +90,7 @@ namespace Shimeji.App.UI
 
         void OnDestroy()
         {
+            Camera.onPostRender -= Draw;
             if (_mat != null) DestroyImmediate(_mat);
         }
     }

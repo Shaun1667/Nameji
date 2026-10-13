@@ -112,13 +112,29 @@ namespace Shimeji.App
                     return act != null ? "hit " + act.InstanceKey : "none";
                 }
                 case "screenshot":
-                    ScreenCapture.CaptureScreenshot(string.Join(" ", a, 1, a.Length - 1));
+                    _app.StartCoroutine(Capture(string.Join(" ", a, 1, a.Length - 1)));
                     return "ok";
                 case "quit":
                     Application.Quit();
                     return "ok";
             }
             return "unknown command";
+        }
+
+        /// <summary>카메라 출력(ULW 백엔드면 RenderTexture, 아니면 백버퍼)을 PNG로 저장.</summary>
+        System.Collections.IEnumerator Capture(string path)
+        {
+            yield return new WaitForEndOfFrame();
+            var rt = _app.MainCamera.targetTexture;
+            int w = rt != null ? rt.width : Screen.width, h = rt != null ? rt.height : Screen.height;
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            tex.ReadPixels(new Rect(0, 0, w, h), 0, 0, false);
+            tex.Apply();
+            RenderTexture.active = prev;
+            File.WriteAllBytes(path, tex.EncodeToPNG());
+            UnityEngine.Object.Destroy(tex);
         }
 
         Characters.CharacterActor Need(string key)
@@ -167,9 +183,14 @@ namespace Shimeji.App
                 ["screen"] = new List<object> { Screen.width, Screen.height },
                 ["hwnd"] = app.Overlay != null ? app.Overlay.Hwnd.ToInt64() : 0,
                 ["exStyle"] = app.Overlay != null ? (long)app.Overlay.ExStyle : 0,
+                ["backend"] = app.Presenter != null ? "layered" : app.Overlay != null ? "dwm" : "editor",
+                ["uploadPxPerSec"] = app.Presenter?.UploadedPixelsLastSecond ?? 0,
                 ["clickThrough"] = app.Overlay?.ClickThrough ?? false,
                 ["hiddenFullscreen"] = app.HiddenForFullscreen,
                 ["paused"] = app.PausedAll,
+                ["menuOpen"] = app.MenuOpen,
+                ["trayRunning"] = app.TrayRunning,
+                ["capturing"] = app.ClickThrough.Capturing,
                 ["surfaces"] = app.World.Surfaces.Count,
                 ["windows"] = app.World.Windows.Count,
                 ["monitors"] = app.World.Monitors.Count,
