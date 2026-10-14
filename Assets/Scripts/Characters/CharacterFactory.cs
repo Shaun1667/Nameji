@@ -192,7 +192,7 @@ namespace Shimeji.Characters
                     var sh = m.shader;
                     bool bad = sh == null || !sh.isSupported || sh.name.Contains("Universal Render Pipeline") || sh.name.Contains("Hidden/InternalErrorShader");
                     if (!bad) continue;
-                    if (standard == null) standard = Shader.Find("Standard");
+                    if (standard == null) standard = Shader.Find(GltfModelImporter.ToonShaderName) ?? Shader.Find("Standard");
                     if (standard == null) continue;
                     var nm = new Material(standard) { name = m.name + "_Builtin" };
                     if (m.HasProperty("_MainTex")) nm.mainTexture = m.mainTexture;
@@ -201,7 +201,7 @@ namespace Shimeji.Characters
                     else if (m.HasProperty("_BaseColor")) nm.color = m.GetColor("_BaseColor");
                     mats[i] = nm;
                     changed = true;
-                    Log.Warn($"material '{m.name}' shader '{sh?.name}' unsupported → Standard");
+                    Log.Warn($"material '{m.name}' shader '{sh?.name}' unsupported → {standard.name}");
                 }
                 if (changed) r.sharedMaterials = mats;
             }

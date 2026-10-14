@@ -40,7 +40,7 @@ namespace Shimeji.App
         {
             ProcessCommands();
             _timer += dt;
-            if (_timer < 0.25f) return;
+            if (_timer < 0.1f) return;
             _timer = 0;
             WriteStatus();
         }
@@ -114,11 +114,49 @@ namespace Shimeji.App
                 case "screenshot":
                     _app.StartCoroutine(Capture(string.Join(" ", a, 1, a.Length - 1)));
                     return "ok";
+                case "ghostcheck":
+                    _app.StartCoroutine(GhostCheck());
+                    return "pending";
+                case "spawnprim":
+                {
+                    // 메모리 진단: 지정 셰이더로 구 하나를 화면 중앙에 띄운다
+                    var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    UnityEngine.Object.Destroy(go.GetComponent<Collider>());
+                    var sh = Shader.Find(string.Join(" ", a, 1, a.Length - 1));
+                    if (sh == null) return "shader not found";
+                    go.GetComponent<Renderer>().sharedMaterial = new Material(sh);
+                    go.transform.position = new Vector3(0, 0, 0);
+                    return "ok";
+                }
                 case "quit":
                     Application.Quit();
                     return "ok";
             }
             return "unknown command";
+        }
+
+        /// <summary>렌더 텍스처와 창 DIB를 비교해 잔상 픽셀 수를 lastResult에 남긴다.</summary>
+        System.Collections.IEnumerator GhostCheck()
+        {
+            // 애니메이션까지 멈추고(창 업로드는 몇 프레임 늦으므로) 화면이 안정된 뒤 비교한다
+            float oldScale = Time.timeScale;
+            Time.timeScale = 0f;
+            for (int i = 0; i < 12; i++) yield return null;
+            yield return new WaitForEndOfFrame();
+            Time.timeScale = oldScale;
+            var rt = _app.MainCamera.targetTexture;
+            if (rt == null || _app.Presenter == null) { _lastResult = "ghosts=n/a"; yield break; }
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false);
+            tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0, false);
+            tex.Apply();
+            RenderTexture.active = prev;
+            int n = _app.Presenter.CountGhostPixels(tex, out var gb);
+            _lastResult = "ghosts=" + n;
+            if (n > 0) Log.Warn($"ghost pixels bounds (window coords) x={gb.x} y={gb.y} w={gb.width} h={gb.height}");
+            UnityEngine.Object.Destroy(tex);
+            Log.Info("ghostcheck " + _lastResult);
         }
 
         /// <summary>카메라 출력(ULW 백엔드면 RenderTexture, 아니면 백버퍼)을 PNG로 저장.</summary>
@@ -189,6 +227,7 @@ namespace Shimeji.App
                 ["hiddenFullscreen"] = app.HiddenForFullscreen,
                 ["paused"] = app.PausedAll,
                 ["menuOpen"] = app.MenuOpen,
+                ["menuRect"] = new List<object> { app.MenuDesktopRect.Left, app.MenuDesktopRect.Top, app.MenuDesktopRect.Right, app.MenuDesktopRect.Bottom },
                 ["trayRunning"] = app.TrayRunning,
                 ["capturing"] = app.ClickThrough.Capturing,
                 ["surfaces"] = app.World.Surfaces.Count,
@@ -197,6 +236,10 @@ namespace Shimeji.App
                 ["commands"] = _commandCount,
                 ["lastResult"] = _lastResult,
                 ["memoryMB"] = GC.GetTotalMemory(false) / (1024.0 * 1024.0),
+                ["unityAllocMB"] = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0),
+                ["unityReservedMB"] = UnityEngine.Profiling.Profiler.GetTotalReservedMemoryLong() / (1024.0 * 1024.0),
+                ["gfxMB"] = UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver() / (1024.0 * 1024.0),
+                ["monoHeapMB"] = UnityEngine.Profiling.Profiler.GetMonoHeapSizeLong() / (1024.0 * 1024.0),
                 ["actors"] = actors,
             };
             try

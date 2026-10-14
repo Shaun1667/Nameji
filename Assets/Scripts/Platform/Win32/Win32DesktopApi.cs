@@ -123,6 +123,17 @@ namespace Shimeji.Platform.Win32
             }
         }
 
+        /// <summary>Windows 더블클릭 간격 (초, 기본 0.5).</summary>
+        public static float SystemDoubleClickSeconds
+        {
+            get
+            {
+                try { return Math.Max(0.2f, GetDoubleClickTime() / 1000f); } catch (Exception) { return 0.5f; }
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern uint GetDoubleClickTime();
+
         public bool IsLeftButtonDown() => KeyDown(Swapped ? VK_RBUTTON : VK_LBUTTON);
         public bool IsRightButtonDown() => KeyDown(Swapped ? VK_LBUTTON : VK_RBUTTON);
 

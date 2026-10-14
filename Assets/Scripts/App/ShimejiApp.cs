@@ -46,6 +46,18 @@ namespace Shimeji.App
         public IOverlayWindow Overlay => _window;
         public LayeredPresenter Presenter => _presenter;
         public bool MenuOpen => _ui != null && _ui.Menu.IsOpen;
+
+        /// <summary>열린 컨텍스트 메뉴의 데스크톱 좌표 사각형 (테스트용).</summary>
+        public RectPx MenuDesktopRect
+        {
+            get
+            {
+                if (!MenuOpen || Space == null) return default;
+                var m = _ui.Menu.ScreenRectOverlay; // 오버레이 스크린 좌표 (아래가 0)
+                var ov = Space.Overlay;
+                return new RectPx(ov.Left + m.Left, ov.Top + (ov.Height - m.Bottom), ov.Left + m.Right, ov.Top + (ov.Height - m.Top));
+            }
+        }
         public bool TrayRunning => _tray != null && _tray.IsRunning;
         public ClickThroughController ClickThrough => _clickThrough;
 
@@ -81,7 +93,7 @@ namespace Shimeji.App
 
         float _worldTimer, _fullscreenTimer, _topmostTimer, _saveTimer, _trayMenuTimer;
         Vec2 _lastCursor;
-        bool _leftWasDown;
+        bool _leftWasDown, _leftWasDownForLog;
         Texture2D _alphaProbe;
         float _cursorAlpha;
         int _cloneCounter;
@@ -147,6 +159,7 @@ namespace Shimeji.App
 #else
             _desktop = new Win32DesktopApi();
             _pointer = new Win32PointerApi();
+            _tracker.DoubleClickTime = Win32PointerApi.SystemDoubleClickSeconds;
             _unityWindow = new OverlayWindow();
             _isRealOverlay = true;
             _selfPid = (int)OverlayWindow.CurrentProcessId;
@@ -368,7 +381,7 @@ namespace Shimeji.App
             HiddenForFullscreen = fs;
             _window.SetVisible(!fs);
             MainCamera.enabled = !fs;
-            Log.Info(fs ? "fullscreen app detected: hiding overlay" : "fullscreen app gone: showing overlay");
+            Log.Info(fs ? "fullscreen app detected: hiding overlay (" + OverlayWindow.LastFullscreenReason + ")" : "fullscreen app gone: showing overlay");
         }
 
         void HandleInput()
@@ -397,6 +410,8 @@ namespace Shimeji.App
             if (left && !_leftWasDown && _ui.Menu.IsOpen && !overMenu) _ui.Menu.Close();
             _leftWasDown = left;
 
+            if (left && !_leftWasDownForLog) Log.Info($"left down at {cursor} hit={hit} capture={capture}");
+            _leftWasDownForLog = left;
             _events.Clear();
             _tracker.Update(Time.unscaledTimeAsDouble, cursor, left, right, hit, _events);
             foreach (var e in _events) Dispatch(e, overlayPt);
@@ -436,6 +451,7 @@ namespace Shimeji.App
 
         void Dispatch(PointerEvent e, Vector2 overlayPt)
         {
+            if (e.Type != PointerEventType.DragMove) Log.Info("pointer " + e);
             if (e.TargetId == MenuTargetId)
             {
                 if (e.Type == PointerEventType.Click || e.Type == PointerEventType.DoubleClick) _ui.Menu.Click(overlayPt);
@@ -539,9 +555,12 @@ namespace Shimeji.App
         void UpdateFrameRate()
         {
             int target = Settings.TargetFrameRate;
+            // 커서가 캐릭터/메뉴 위에 있으면 짧은 클릭을 놓치지 않도록(입력은 프레임마다 폴링) 항상 전체 프레임레이트
+            bool interacting = _clickThrough.Capturing || (_ui != null && _ui.Menu.IsOpen) || _tracker.Dragging;
             if (HiddenForFullscreen) target = 5;
+            else if (interacting) target = Settings.TargetFrameRate;
             else if (_actors.Count == 0 || PausedAll) target = 10;
-            else if (_actors.All(a => a.Brain.AnimationKey == AnimKeys.Sleep) && !_clickThrough.Capturing) target = 15;
+            else if (_actors.All(a => a.Brain.AnimationKey == AnimKeys.Sleep)) target = 15;
             if (Application.targetFrameRate != target) Application.targetFrameRate = target;
         }
 
@@ -564,9 +583,12 @@ namespace Shimeji.App
             var ov = Space.Overlay;
             foreach (var a in _actors)
             {
+                // 실제로 렌더된 위치 기준 (place/창 추종 등으로 이번 프레임 물리 위치만 먼저 바뀐 경우 잔상 방지)
+                if (!a.HasRendered) continue;
                 float h = a.Body.Height;
                 float half = h * 0.85f + 8f;
-                float cx = a.Body.Position.X - ov.Left, cy = a.Body.Position.Y - h * 0.5f - ov.Top;
+                var foot = a.RenderedFootPx;
+                float cx = foot.X - ov.Left, cy = foot.Y - h * 0.5f - ov.Top;
                 _regions.Add(new RectInt((int)(cx - half), (int)(cy - half), (int)(half * 2), (int)(half * 2)));
             }
             int H = (int)ov.Height;

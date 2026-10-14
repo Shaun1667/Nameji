@@ -107,9 +107,17 @@ namespace Shimeji.EditorTools
                 QualitySettings.vSyncCount = 0;
             }
 
+            // 메모리/CPU 절약: 소리를 쓰지 않으므로 오디오 엔진(FMOD) 끔, 그래픽 잡 스레드 끔
+            PlayerSettings.graphicsJobs = false;
+            var audio = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/AudioManager.asset")[0]);
+            audio.FindProperty("m_DisableAudio").boolValue = true;
+            audio.ApplyModifiedProperties();
+
             SetLayerName(8, "Character");
             // Hidden/Internal-Colored, UI/Default는 내장 리소스라 항상 포함됨 (목록에 넣으면 빌드가 실패한다)
-            AddAlwaysIncludedShaders("Standard", "UniGLTF/UniUnlit", "VRM10/MToon10");
+            // Standard는 전체 배리언트가 들어가 런타임 메모리를 크게 쓰므로 빼고, 호환 경량 셰이더(Shimeji/Toon)를 쓴다.
+            RemoveAlwaysIncludedShader("Standard");
+            AddAlwaysIncludedShaders("Shimeji/Toon", "UniGLTF/UniUnlit", "VRM10/MToon10");
             AssetDatabase.SaveAssets();
             Debug.Log("[Shimeji] project settings configured");
         }
@@ -120,6 +128,21 @@ namespace Shimeji.EditorTools
             var layers = tagManager.FindProperty("layers");
             var el = layers.GetArrayElementAtIndex(index);
             if (el.stringValue != name) { el.stringValue = name; tagManager.ApplyModifiedProperties(); }
+        }
+
+        static void RemoveAlwaysIncludedShader(string name)
+        {
+            var sh = Shader.Find(name);
+            if (sh == null) return;
+            var gs = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/GraphicsSettings.asset")[0]);
+            var arr = gs.FindProperty("m_AlwaysIncludedShaders");
+            for (int i = arr.arraySize - 1; i >= 0; i--)
+            {
+                if (arr.GetArrayElementAtIndex(i).objectReferenceValue != sh) continue;
+                arr.GetArrayElementAtIndex(i).objectReferenceValue = null;
+                arr.DeleteArrayElementAtIndex(i);
+            }
+            gs.ApplyModifiedProperties();
         }
 
         static void AddAlwaysIncludedShaders(params string[] names)

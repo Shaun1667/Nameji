@@ -61,6 +61,24 @@ namespace Shimeji.Characters
     /// <summary>glTF / GLB (UniGLTF).</summary>
     public sealed class GltfModelImporter : IModelImporter
     {
+        /// <summary>
+        /// glTF 머티리얼을 "Standard" 대신 경량 셰이더(Shimeji/Toon)로 만든다.
+        /// Standard 전체 배리언트를 빌드에 넣으면 첫 사용 시 메모리를 ~80MB 더 쓰기 때문.
+        /// </summary>
+        public static IMaterialDescriptorGenerator CreateMaterialGenerator()
+        {
+            var gen = new BuiltInGltfMaterialDescriptorGenerator();
+            var toon = Shader.Find(ToonShaderName);
+            if (toon != null)
+            {
+                gen.PbrMaterialImporter.Shader = toon;
+                gen.DefaultMaterialImporter.Shader = toon;
+            }
+            return gen;
+        }
+
+        public const string ToonShaderName = "Shimeji/Toon";
+
         public bool CanLoad(string path)
         {
             var ext = Path.GetExtension(path);
@@ -70,7 +88,7 @@ namespace Shimeji.Characters
         public async Task<LoadedModel> LoadAsync(string path)
         {
             IAwaitCaller caller = Application.isPlaying ? (IAwaitCaller)new RuntimeOnlyAwaitCaller() : new ImmediateCaller();
-            var instance = await GltfUtility.LoadAsync(path, caller);
+            var instance = await GltfUtility.LoadAsync(path, caller, CreateMaterialGenerator());
             if (instance == null) throw new InvalidDataException("glTF load returned null");
             instance.ShowMeshes();
             return new LoadedModel { Root = instance.gameObject, IsVrm = false, Resources = new InstanceDisposer(instance) };
@@ -122,7 +140,7 @@ namespace Shimeji.Characters
                 try
                 {
                     IAwaitCaller caller = Application.isPlaying ? (IAwaitCaller)new RuntimeOnlyAwaitCaller() : new ImmediateCaller();
-                    var inst = await GltfUtility.LoadAsync(f, caller);
+                    var inst = await GltfUtility.LoadAsync(f, caller, GltfModelImporter.CreateMaterialGenerator());
                     foreach (var c in inst.AnimationClips)
                     {
                         if (c == null) continue;

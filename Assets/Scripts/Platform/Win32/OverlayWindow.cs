@@ -203,11 +203,18 @@ namespace Shimeji.Platform.Win32
         /// SHQueryUserNotificationState의 QUNS_BUSY는 우리 오버레이 자신에도 반응하므로 쓰지 않고,
         /// D3D 전체화면/프레젠테이션 모드 + "전경 창이 모니터 전체를 덮는가"를 직접 검사한다.
         /// </summary>
+        /// <summary>마지막으로 전체화면이라고 판단한 이유 (로그용).</summary>
+        public static string LastFullscreenReason { get; private set; } = "";
+
         public static bool IsFullscreenAppActive(IntPtr selfHwnd)
         {
             try
             {
-                if (SHQueryUserNotificationState(out int state) == 0 && (state == 3 || state == 4)) return true;
+                if (SHQueryUserNotificationState(out int state) == 0 && (state == 3 || state == 4))
+                {
+                    LastFullscreenReason = "notification state " + state;
+                    return true;
+                }
 
                 var fg = GetForegroundWindow();
                 if (fg == IntPtr.Zero || fg == selfHwnd) return false;
@@ -222,7 +229,14 @@ namespace Shimeji.Platform.Win32
                 var info = new MONITORINFOEX { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFOEX>() };
                 if (mon == IntPtr.Zero || !GetMonitorInfoW(mon, ref info)) return false;
                 var m = info.rcMonitor;
-                return r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right && r.Bottom >= m.Bottom;
+                bool covers = r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right && r.Bottom >= m.Bottom;
+                if (covers)
+                {
+                    var title = new StringBuilder(128);
+                    GetWindowTextW(fg, title, title.Capacity);
+                    LastFullscreenReason = $"foreground '{cls}' \"{title}\" pid={pid} rect=({r.Left},{r.Top},{r.Right},{r.Bottom})";
+                }
+                return covers;
             }
             catch (Exception) { return false; }
         }

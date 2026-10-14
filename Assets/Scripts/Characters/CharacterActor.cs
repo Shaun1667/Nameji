@@ -104,7 +104,15 @@ namespace Shimeji.Characters
         public void Step(float dt, IWorld world, ScreenSpace space, Vector3? lookTargetWorld)
         {
             if (_destroyed) return;
+            var before = Body.Position;
+            var stateBefore = Body.State;
+            var behBefore = Brain.Current?.Id;
             Brain.Tick(dt, world);
+            // 진단: 잡기/창 추종 외의 순간이동 감지 (복구 로직 동작 등)
+            if (stateBefore != BodyState.Held && Body.State != BodyState.Held && (Body.Surface?.OwnerId ?? 0) == 0
+                && (Body.Position - before).Length > 150f)
+                Log.Warn($"[{InstanceKey}] teleport {before} -> {Body.Position} state {stateBefore}->{Body.State} " +
+                         $"beh {behBefore}->{Brain.Current?.Id} events={Brain.LastEvents} surface={Body.Surface}");
             Anim.Play(Brain.AnimationKey, Brain.AnimationSpeed);
             Anim.LookTarget = lookTargetWorld;
             ApplyTransform(dt, space);
@@ -113,6 +121,8 @@ namespace Shimeji.Characters
         void ApplyTransform(float dt, ScreenSpace space)
         {
             var foot = space.DesktopToWorld(Body.Position);
+            RenderedFootPx = Body.Position;
+            HasRendered = true;
 
             // --- 방향 (0.2초 보간) ---
             float baseYaw = Config.FacingYawDeg;
@@ -154,6 +164,10 @@ namespace Shimeji.Characters
         }
 
         /// <summary>화면 픽셀 기준 대략적인 캐릭터 사각형 (알파 히트테스트 대상 선택/디버그).</summary>
+        /// <summary>마지막으로 Transform에 반영된 발 위치 (화면 픽셀). 순간이동 직후엔 Body.Position과 다를 수 있다.</summary>
+        public Vec2 RenderedFootPx { get; private set; }
+        public bool HasRendered { get; private set; }
+
         public RectPx ScreenRect
         {
             get

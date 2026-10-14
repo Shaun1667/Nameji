@@ -22,9 +22,10 @@ namespace Shimeji.App
         readonly List<RectInt> _current = new List<RectInt>();
         readonly List<RectInt> _previous = new List<RectInt>();
         readonly List<RectInt> _requests = new List<RectInt>();
+        readonly List<RectInt> _retry = new List<RectInt>();
         int _pending;
         bool _fullRefresh = true;
-        public int MaxPending = 12;
+        public int MaxPending = 24;
         public int UploadedPixelsLastSecond { get; private set; }
         int _pixelCounter;
         float _counterTime;
@@ -47,7 +48,7 @@ namespace Shimeji.App
                 _rt.Release();
                 UnityEngine.Object.Destroy(_rt);
             }
-            var desc = new RenderTextureDescriptor(_window.Width, _window.Height, RenderTextureFormat.ARGB32, 24)
+            var desc = new RenderTextureDescriptor(_window.Width, _window.Height, RenderTextureFormat.ARGB32, 16)
             {
                 sRGB = QualitySettings.activeColorSpace == ColorSpace.Linear,
                 msaaSamples = 1,
@@ -77,6 +78,15 @@ namespace Shimeji.App
         {
             if (cam != _camera || _rt == null || !_window.IsValid) return;
 
+            if (_pending > MaxPending)
+            {
+                // GPU가 밀리면 이번 프레임은 건너뛴다. 이번에 그린 영역은 "다음에 반드시 올릴 영역"에 누적해
+                // 캐릭터가 떠난 자리가 지워지지 않고 남는 잔상이 생기지 않게 한다.
+                _previous.AddRange(_current);
+                Merge(_previous);
+                return;
+            }
+
             _requests.Clear();
             if (_fullRefresh)
             {
@@ -85,15 +95,16 @@ namespace Shimeji.App
             }
             else
             {
-                // 지금 영역 + 지난 프레임 영역(캐릭터가 떠난 자리를 투명으로 지우기 위해)
+                // 지금 영역 + 지난번 올린 이후 내용이 있었던 영역(떠난 자리를 투명으로 지우기 위해) + 실패한 영역
                 _requests.AddRange(_current);
                 _requests.AddRange(_previous);
+                _requests.AddRange(_retry);
                 Merge(_requests);
             }
+            _retry.Clear();
             _previous.Clear();
             _previous.AddRange(_current);
 
-            if (_pending > MaxPending) return; // GPU가 밀리면 이번 프레임은 건너뜀 (다음 프레임에 이전 영역 포함해 다시 요청)
             foreach (var r in _requests)
             {
                 int texY = _window.Height - r.yMax; // RT는 아래가 0
@@ -130,7 +141,12 @@ namespace Shimeji.App
         unsafe void OnReadback(AsyncGPUReadbackRequest req, RectInt r)
         {
             _pending--;
-            if (req.hasError || !_window.IsValid) return;
+            if (!_window.IsValid) return;
+            if (req.hasError)
+            {
+                _retry.Add(r); // 다음 프레임에 다시 읽는다
+                return;
+            }
             if (r.xMax > _window.Width || r.yMax > _window.Height) return; // 크기 변경 직후 오래된 요청
             var data = req.GetData<byte>();
             byte* src = (byte*)NativeArrayUnsafeUtility.GetUnsafeReadOnlyPtr(data);
@@ -162,6 +178,32 @@ namespace Shimeji.App
                 _pixelCounter = 0;
                 _counterTime = Time.unscaledTime;
             }
+        }
+
+        /// <summary>
+        /// 진단: 렌더 결과(rtCopy, 아래가 0)와 창 DIB를 비교해 "창에는 남아 있는데 렌더에는 없는" 잔상 픽셀 수를 센다.
+        /// </summary>
+        public unsafe int CountGhostPixels(Texture2D rtCopy, out RectInt bounds)
+        {
+            bounds = default;
+            if (!_window.IsValid || rtCopy.width != _window.Width || rtCopy.height != _window.Height) return -1;
+            var px = rtCopy.GetPixels32();
+            byte* dib = (byte*)_window.Bits;
+            int w = _window.Width, h = _window.Height, ghosts = 0;
+            int x0 = int.MaxValue, y0 = int.MaxValue, x1 = -1, y1 = -1;
+            for (int y = 0; y < h; y++)
+            {
+                byte* row = dib + y * w * 4;
+                int srcRow = (h - 1 - y) * w;
+                for (int x = 0; x < w; x++)
+                {
+                    if (row[x * 4 + 3] <= 8 || px[srcRow + x].a != 0) continue;
+                    ghosts++;
+                    if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y;
+                }
+            }
+            if (ghosts > 0) bounds = new RectInt(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+            return ghosts;
         }
 
         /// <summary>DIB에서 커서 위치 픽셀의 알파 (정밀 히트테스트용).</summary>
