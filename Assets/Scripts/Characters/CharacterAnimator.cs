@@ -26,7 +26,7 @@ namespace Shimeji.Characters
         AnimatorOverrideController _override;
         readonly Dictionary<string, string> _modelClipByKey = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
         readonly HashSet<string> _libraryKeys = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-        PoseApplier _poser;
+        IPoseApplier _poser;
         PoseParams _poseFrom, _poseCurrent;
         float _poseBlend = 1f;
         float _poseTime;
@@ -40,6 +40,7 @@ namespace Shimeji.Characters
         public string CurrentKey { get; private set; }
         public AnimationSource CurrentSource { get; private set; }
         public RigKind RigKind => _rig?.Kind ?? RigKind.Generic;
+        public IPoseApplier Poser => _poser;
         public IReadOnlyDictionary<string, string> ModelClipMap => _modelClipByKey;
 
         /// <summary>시선 목표(월드). null이면 정면.</summary>
@@ -112,6 +113,22 @@ namespace Shimeji.Characters
                 _poser = new PoseApplier(space, rig.Bones);
             }
         }
+
+        /// <summary>
+        /// 클립 없이 절차 포즈만 쓰는 구성 (2D 이미지 캐릭터).
+        /// </summary>
+        public void SetupProcedural(CharacterRig rig, Transform space, IPoseApplier poser, CharacterConfig cfg)
+        {
+            _rig = rig;
+            _space = space;
+            _armSpreadBias = 0f;
+            _head = null; // 2D는 3D 시선 추적 대신 포즈 적용기가 머리를 다룬다
+            if (rig.Animator != null) rig.Animator.enabled = false;
+            _poser = poser;
+        }
+
+        /// <summary>true면 포즈 갱신을 멈춘다 (관절 편집 중 휴식 포즈 유지).</summary>
+        public bool Frozen { get; set; }
 
         static GameObject FindLegacyRoot(Transform space)
         {
@@ -186,6 +203,7 @@ namespace Shimeji.Characters
         void LateUpdate()
         {
             float dt = Time.deltaTime;
+            if (Frozen) return;
             if (CurrentSource == AnimationSource.Procedural && _poser != null && CurrentKey != null)
             {
                 _poseTime += dt * _speed;

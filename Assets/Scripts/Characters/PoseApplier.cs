@@ -9,7 +9,13 @@ namespace Shimeji.Characters
     /// 휴식 포즈(로드 직후 포즈)를 기준으로 "자식 본 방향"을 목표 방향으로 돌리는 방식이라
     /// T/A 포즈나 본 축 규칙과 무관하게 동작한다.
     /// </summary>
-    public sealed class PoseApplier
+    /// <summary>의미 단위 포즈(PoseParams)를 본에 적용하는 방식 (3D 리그 / 2D 이미지 리그).</summary>
+    public interface IPoseApplier
+    {
+        void Apply(PoseParams p);
+    }
+
+    public sealed class PoseApplier : IPoseApplier
     {
         readonly Transform _space;
         readonly Dictionary<BoneKey, Transform> _bones;

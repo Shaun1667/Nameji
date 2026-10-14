@@ -15,6 +15,9 @@ namespace Shimeji.Characters
         public GameObject Root;
         /// <summary>VRM이면 스프링본 등 VRM 런타임이 붙어 있다.</summary>
         public bool IsVrm;
+        /// <summary>2D 이미지 캐릭터면 설정된다.</summary>
+        public SpriteInfo Sprite;
+        public bool IsSprite => Sprite != null;
         /// <summary>리소스(텍스처/메시) 해제 담당. 캐릭터 제거 시 Dispose.</summary>
         public IDisposable Resources;
     }
@@ -125,6 +128,16 @@ namespace Shimeji.Characters
                 var ext = Path.GetExtension(f).ToLowerInvariant();
                 if (Array.IndexOf(Extensions, ext) >= 0) return f;
             }
+            // 3D 모델이 없으면 2D 이미지 캐릭터: image.* / sprite.* 우선, 그다음 아무 이미지 (icon.png 제외)
+            foreach (var n in new[] { "image", "sprite", "character" })
+                foreach (var ext in SpriteModelBuilder.ImageExtensions)
+                {
+                    var p = Path.Combine(folder, n + ext);
+                    if (File.Exists(p)) return p;
+                }
+            foreach (var f in Directory.GetFiles(folder))
+                if (SpriteModelBuilder.IsImage(f) && !string.Equals(Path.GetFileNameWithoutExtension(f), "icon", StringComparison.OrdinalIgnoreCase))
+                    return f;
             return null;
         }
 

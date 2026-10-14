@@ -34,7 +34,24 @@ namespace Shimeji.Characters
             foreach (var w in warnings) Log.Warn($"[{name}] {w}");
 
             var modelPath = ModelImporterRegistry.FindModelFile(folder);
-            if (modelPath == null) throw new FileNotFoundException($"no model file (model.vrm/.glb/.gltf) in '{folder}'");
+            if (modelPath == null) throw new FileNotFoundException($"no model file (model.vrm/.glb/.gltf or image.png) in '{folder}'");
+
+            // 2D 이미지 캐릭터
+            if (SpriteModelBuilder.IsImage(modelPath))
+            {
+                var sprite = SpriteModelBuilder.Build(modelPath, cfg);
+                try
+                {
+                    return Assemble(name, sprite, cfg, assets, null);
+                }
+                catch
+                {
+                    sprite.Resources?.Dispose();
+                    if (sprite.Root != null) UnityGlue.SafeDestroy(sprite.Root);
+                    throw;
+                }
+            }
+
             var importer = ModelImporterRegistry.Find(modelPath);
             if (importer == null) throw new NotSupportedException("unsupported model format: " + modelPath);
 
@@ -97,11 +114,14 @@ namespace Shimeji.Characters
             try
             {
                 // 1) 리그
-                var rig = CharacterRigBuilder.Build(model.gameObject, cfg);
+                // 2D 이미지 리그는 본 이름이 정해져 있으므로 제네릭으로 매핑만 하고, 휴머노이드 아바타는 만들지 않는다
+                var rig = CharacterRigBuilder.Build(model.gameObject, loaded.IsSprite ? new CharacterConfig { RigType = RigType.Generic } : cfg);
+                if (loaded.IsSprite) rig.Kind = RigKind.Sprite2D;
                 foreach (var w in rig.Warnings) Log.Warn($"[{id}] {w}");
 
-                // 2) 정면 방향 보정 → +Z
-                oriented.localRotation = Quaternion.Euler(0, DetectYawToFaceForward(rig, oriented), 0);
+                // 2) 정면 방향 보정 → +Z (2D는 카메라를 보는 평면이므로 회전하지 않음)
+                if (!loaded.IsSprite)
+                    oriented.localRotation = Quaternion.Euler(0, DetectYawToFaceForward(rig, oriented), 0);
 
                 // 3) 머티리얼/렌더러
                 FixRenderers(root);
@@ -119,7 +139,7 @@ namespace Shimeji.Characters
                 CharacterColliders.Build(root.transform, rig, cfg, targetHeight);
 
                 // 6) 스프링본 (VRM은 자체 런타임 사용)
-                if (!loaded.IsVrm && cfg.EnableSpringBones)
+                if (!loaded.IsVrm && !loaded.IsSprite && cfg.EnableSpringBones)
                 {
                     var spring = root.AddComponent<SimpleSpringBone>();
                     spring.Setup(model, rig.Bones.Values);
@@ -128,13 +148,16 @@ namespace Shimeji.Characters
 
                 // 7) 애니메이터
                 var anim = root.AddComponent<CharacterAnimator>();
-                anim.Setup(rig, oriented, assets.BaseController, assets.LibraryClips, cfg, extraClips);
+                if (loaded.IsSprite)
+                    anim.SetupProcedural(rig, oriented, new SpritePoseApplier(rig, model, cfg.SpriteLimbAmount), cfg);
+                else
+                    anim.Setup(rig, oriented, assets.BaseController, assets.LibraryClips, cfg, extraClips);
                 anim.LookAtEnabled = cfg.LookAtCursor;
 
                 var actor = root.AddComponent<CharacterActor>();
                 actor.Initialize(id, cfg, rig, anim, visual, oriented, loaded, bounds.size * s, assets.PixelsPerUnit);
                 Log.Info($"[{id}] loaded: rig={rig.Kind}, bones={rig.Bones.Count}, height={cfg.HeightPixels}px, " +
-                         $"modelClips={anim.ModelClipMap.Count}, vrm={loaded.IsVrm}");
+                         $"modelClips={anim.ModelClipMap.Count}, vrm={loaded.IsVrm}, sprite={loaded.IsSprite}, rawBounds={bounds.size}");
                 return actor;
             }
             catch

@@ -78,6 +78,7 @@ namespace Shimeji.App
         TrayIcon _tray;
         CharacterFolderWatcher _watcher;
         OverlayUI _ui;
+        JointEditor _joints;
         DebugSurfaceRenderer _debug;
         TestHooks _testHooks;
         CharacterAssets _assets;
@@ -222,6 +223,7 @@ namespace Shimeji.App
         {
             if (_quitting) yield break;
             _ui = new OverlayUI(MainCamera);
+            _joints = _ui.CreateJointEditor(MainCamera);
             LoadProfiles();
 
             // 플레이어 창이 완전히 만들어질 때까지 대기
@@ -401,7 +403,10 @@ namespace Shimeji.App
 
             var overlayPt = Space.DesktopToOverlayScreen(cursor).ToVector2();
             bool overMenu = _ui.Menu.Contains(overlayPt);
-            int hit = overMenu ? MenuTargetId : HitTestCharacters(cursor);
+            int hit = overMenu ? MenuTargetId : _joints.HitTest(cursor, overlayPt);
+            if (hit < 0) hit = HitTestCharacters(cursor);
+            // 관절 편집 중인 캐릭터 본체는 잡거나 클릭할 수 없다 (관절 점만 조작)
+            if (_joints.Active && hit == _joints.Actor.RuntimeId) hit = -1;
 
             bool capture = _clickThrough.Update(hit >= 0, left || right);
             _window?.SetClickThrough(!capture);
@@ -416,6 +421,7 @@ namespace Shimeji.App
             _tracker.Update(Time.unscaledTimeAsDouble, cursor, left, right, hit, _events);
             foreach (var e in _events) Dispatch(e, overlayPt);
             _ui.Menu.UpdateHover(overlayPt);
+            _joints.UpdateHover(overlayPt);
         }
 
         public int HitTestCharacters(Vec2 cursor)
@@ -452,6 +458,11 @@ namespace Shimeji.App
         void Dispatch(PointerEvent e, Vector2 overlayPt)
         {
             if (e.Type != PointerEventType.DragMove) Log.Info("pointer " + e);
+            if (_joints.Owns(e.TargetId))
+            {
+                _joints.Dispatch(e, overlayPt);
+                return;
+            }
             if (e.TargetId == MenuTargetId)
             {
                 if (e.Type == PointerEventType.Click || e.Type == PointerEventType.DoubleClick) _ui.Menu.Click(overlayPt);
@@ -499,7 +510,7 @@ namespace Shimeji.App
             _debug.CharacterRects.Clear();
             foreach (var a in _actors.ToArray())
             {
-                a.Brain.Paused = PausedAll || HiddenForFullscreen;
+                a.Brain.Paused = PausedAll || HiddenForFullscreen || a == _joints.Actor;
                 Vector3? lt = null;
                 if (look.HasValue && (a.Body.Position - _lastCursor).Length < 700f) lt = look.Value + Vector3.forward * a.Depth;
                 try
@@ -516,6 +527,7 @@ namespace Shimeji.App
 
         void UpdateUI()
         {
+            _joints.Update();
             float now = Time.unscaledTime;
             foreach (var a in _actors)
             {
@@ -598,6 +610,7 @@ namespace Shimeji.App
                 var r = b.ScreenRect;
                 _regions.Add(new RectInt((int)r.xMin - 4, H - (int)r.yMax - 4, (int)r.width + 8, (int)r.height + 8));
             }
+            _joints.AddRegions(_regions, H);
             if (_ui.Menu.IsOpen)
             {
                 var m = _ui.Menu.ScreenRectOverlay;
@@ -762,6 +775,7 @@ namespace Shimeji.App
         {
             if (a == null) return;
             if (_ui.Menu.TargetRuntimeId == a.RuntimeId) _ui.Menu.Close();
+            if (_joints.Actor == a) _joints.End();
             if (_tracker.DragTarget == a.RuntimeId) _tracker.Cancel();
             if (_bubbles.TryGetValue(a.RuntimeId, out var b)) { b.Destroy(); _bubbles.Remove(a.RuntimeId); }
             _actors.Remove(a);
@@ -794,7 +808,72 @@ namespace Shimeji.App
                 new ContextMenuView.Item(PausedAll ? "전체 재개" : "전체 일시정지", () => SetPaused(!PausedAll)),
                 new ContextMenuView.Item("닫기", null),
             };
+            if (a.IsSprite) items.Insert(items.Count - 1, new ContextMenuView.Item("관절 편집 (2D)", () => BeginJointEdit(a)));
             _ui.Menu.Open(a.RuntimeId, overlayPt, items);
+        }
+
+        // ======================================================================
+        // 2D 관절 편집
+        // ======================================================================
+
+        public bool BeginJointEdit(CharacterActor a)
+        {
+            if (a == null || !a.IsSprite) return false;
+            _ui.Menu.Close();
+            _joints.Begin(a, Space, joints => SaveJoints(a, joints), () => SaveJoints(a, null), null);
+            ShowBubble(a, "관절을 드래그해서 옮겨 주세요", 3f);
+            return _joints.Active;
+        }
+
+        public bool JointEditActive => _joints != null && _joints.Active;
+
+        /// <summary>테스트/자동화용: 편집 중인 관절 하나를 데스크톱 좌표로 옮긴다.</summary>
+        public void JointEditMove(string joint, Vec2 desktop)
+        {
+            int i = Array.IndexOf(SpriteJoints.All, joint);
+            if (!_joints.Active || i < 0) return;
+            int id = JointEditor.HandleTargetBase + i;
+            _joints.Dispatch(new PointerEvent { Type = PointerEventType.DragStart, TargetId = id, Position = desktop }, default);
+            _joints.Dispatch(new PointerEvent { Type = PointerEventType.DragEnd, TargetId = id, Position = desktop }, default);
+        }
+
+        public void JointEditSave()
+        {
+            if (_joints.Active) _joints.Save();
+        }
+
+        public void JointEditCancel() => _joints.End();
+
+        /// <summary>character.json의 "joints"를 쓰거나(null이면 지움) → 폴더 감시가 캐릭터를 다시 로드한다.</summary>
+        void SaveJoints(CharacterActor a, Dictionary<string, Vec2> normalized)
+        {
+            try
+            {
+                var folder = Path.GetDirectoryName(a.Sprite.ImagePath);
+                var path = Path.Combine(folder, "character.json");
+                Dictionary<string, object> d = null;
+                if (File.Exists(path))
+                {
+                    try { d = MiniJson.Parse(File.ReadAllText(path)) as Dictionary<string, object>; }
+                    catch (Exception e) { Log.Warn("character.json unreadable, rewriting: " + e.Message); }
+                }
+                d = d ?? new Dictionary<string, object>();
+                if (normalized == null) d.Remove("joints");
+                else
+                {
+                    var j = new Dictionary<string, object>();
+                    foreach (var kv in normalized)
+                        j[kv.Key] = new List<object> { Math.Round(kv.Value.X, 4), Math.Round(kv.Value.Y, 4) };
+                    d["joints"] = j;
+                }
+                SaveSettings(); // 다시 로드돼도 같은 자리에 나타나도록 위치 저장
+                File.WriteAllText(path, MiniJson.Serialize(d));
+                Log.Info($"[{a.InstanceKey}] joints {(normalized == null ? "reset to auto" : "saved")} → {path}");
+            }
+            catch (Exception e)
+            {
+                Log.UserError("관절 저장 실패: " + e.Message);
+            }
         }
 
         void Force(CharacterActor a, string behavior)

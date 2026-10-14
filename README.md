@@ -9,7 +9,7 @@ SD(치비) 3D 모델 파일을 `Characters/` 폴더에 넣으면 리그를 자�
 ## 빠른 시작 (빌드 사용)
 
 1. `Builds/Win64/Shimeji.exe`를 실행합니다.
-2. 샘플 캐릭터 두 개(`SampleChibi` 휴머노이드, `SampleBlob` 제네릭)가 화면 위에서 떨어져 내려옵니다.
+2. 샘플 캐릭터 세 개(`SampleChibi` 3D 휴머노이드, `SampleBlob` 3D 제네릭, `SampleSprite` 2D 이미지)가 화면 위에서 떨어져 내려옵니다.
 3. 캐릭터를 바꾸거나 추가하려면 `Builds/Win64/Characters/<이름>/model.vrm`(또는 `.glb`, `.gltf`)을 넣습니다. 재시작 없이 바로 나타납니다.
 4. 종료는 작업표시줄 트레이 아이콘 → **종료**로 합니다.
 
@@ -57,6 +57,38 @@ SD(치비) 3D 모델 파일을 `Characters/` 폴더에 넣으면 리그를 자�
 
 상태 키: `Idle, IdleLookAround, Walk, Run, Sit, SitEdge, Sleep, Jump, Fall, Land, Dragged, Thrown, ClimbWall, HangCeiling, CrawlCeiling, ClickReact, Wave, Dance`
 
+### 2D 이미지 캐릭터 (PNG 한 장)
+
+3D 모델이 없고 이미지만 있는 폴더는 2D 캐릭터로 인식합니다. 파일명은 `image.png` / `sprite.png` / `character.png` 우선이고, 없으면 아무 PNG·JPG나 씁니다(`icon.png` 제외).
+
+```
+Characters/MyDrawing/
+  ├─ image.png          (투명 배경 필수, 서 있는 정면 또는 반측면 그림)
+  └─ character.json     (선택)
+```
+
+동작 방식:
+1. **자동 관절 감지**: 알파 실루엣을 분석합니다. 폭이 가장 좁은 곳을 목으로, 다리가 갈라지는 곳을 가랑이로, 몸통 밖으로 튀어나온 가장 먼 점을 손으로 잡습니다. 못 찾으면 비율로 추정합니다.
+2. **자동 리깅**: 격자 메시를 만들고 본 가중치를 자동 계산합니다. 팔 본은 몸통 바깥 영역만, 다리 본은 가랑이 아래만 따르게 해서 팔을 움직여도 몸통이 찢어지지 않습니다.
+3. **애니메이션**: 3D와 같은 행동/포즈 정의를 2D로 옮깁니다. 팔은 화면 평면에서 회전하고, 다리는 원근 축소로 들어 올리거나 앉으며, 몸통과 머리는 기울어집니다. 진행 방향에 따라 좌우가 반전됩니다.
+4. **관절 편집**: 캐릭터를 우클릭하고 **관절 편집 (2D)**을 누르면 관절 점(빨강 = 이미지 왼쪽, 파랑 = 이미지 오른쪽, 노랑 = 몸 중심)이 나타납니다. 드래그해서 옮긴 뒤 **관절 저장**을 누르면 `character.json`의 `joints`에 기록되고 자동으로 다시 로드됩니다. **자동 감지로 되돌리기**를 누르면 `joints`를 지웁니다.
+
+잘 되는 그림: 투명 배경, 서 있는 자세, 팔이 몸에서 조금 떨어져 있고 두 다리가 보이는 그림. 팔이 몸 앞에 겹쳐 있거나 긴 치마로 다리가 안 보이면 자동 감지가 비율 추정으로 대체됩니다. 이때는 관절 편집으로 고치거나 `spriteLimbAmount`를 낮추세요.
+
+2D 전용 `character.json` 항목:
+
+```json
+{
+  "spriteFacing": "front",      // front | left | right : 그림이 보는 방향 (좌우 반전 기준)
+  "spriteLimbAmount": 1.0,      // 팔다리 움직임 세기 (0 = 거의 통이미지, 2 = 과장)
+  "joints": {                   // 관절 위치 (이미지 정규화 좌표 0..1, 좌상단 원점). 관절 편집 UI가 자동으로 써 줌
+    "neck": [0.5, 0.42], "handA": [0.12, 0.6]
+  }
+}
+```
+
+관절 이름: `top, neck, hips, shoulderA, elbowA, handA, shoulderB, elbowB, handB, hipA, kneeA, footA, hipB, kneeB, footB` (A = 이미지 왼쪽, B = 이미지 오른쪽)
+
 ### character.json (모든 항목 선택)
 
 ```json
@@ -95,7 +127,7 @@ Assets/Scripts/
   Editor/          샘플 모델 생성, 휴머노이드 클립 베이커, 프로젝트/씬 설정, 빌드, FBX 후처리
 Assets/Shaders/    Shimeji/Toon (Standard 대체 경량 셰이더)
 Assets/Animations/ 공용 휴머노이드 클립 18개 + ShimejiBase.controller (코드로 생성, LICENSES.md 참고)
-Assets/Tests/      EditMode 테스트 63개
+Assets/Tests/      EditMode 테스트 71개
 Tools/AcceptanceTests/  Windows 빌드 수용 테스트 스크립트
 ```
 
@@ -116,7 +148,7 @@ Tools/AcceptanceTests/  Windows 빌드 수용 테스트 스크립트
 
 ## 테스트 결과
 
-- **EditMode 63개 전부 통과**: 좌표 왕복(음수 좌표 모니터), 표면 생성/창 필터/가림 처리, 물리(착지, 창 추종, 최소화 시 낙하, 벽 타기 → 창 위/천장, 던지기, 복구), 행동 선택(가중치, 조건, 쿨다운, 고정 시드), 본 매핑(Mixamo/Bip001/VRM/Blender/임의 이름), JSON 파싱, 입력 판정, 실제 GLB 로딩(휴머노이드/제네릭/모델 클립 우선/깨진 파일), 폴더 감시, Win32 스모크, **20분 방치 시뮬레이션**(창 이동/최소화/Z순서 변경/던지기 포함, 시드 3개)
+- **EditMode 71개 전부 통과** (2D: 관절 감지/폴백/덮어쓰기, 메시/가중치 규칙, 실제 PNG 로딩·포즈, 불투명 이미지 거부 포함): 좌표 왕복(음수 좌표 모니터), 표면 생성/창 필터/가림 처리, 물리(착지, 창 추종, 최소화 시 낙하, 벽 타기 → 창 위/천장, 던지기, 복구), 행동 선택(가중치, 조건, 쿨다운, 고정 시드), 본 매핑(Mixamo/Bip001/VRM/Blender/임의 이름), JSON 파싱, 입력 판정, 실제 GLB 로딩(휴머노이드/제네릭/모델 클립 우선/깨진 파일), 폴더 감시, Win32 스모크, **20분 방치 시뮬레이션**(창 이동/최소화/Z순서 변경/던지기 포함, 시드 3개)
 - **Windows 빌드 수용 테스트** (`Tools/AcceptanceTests/acceptance.ps1`): 25개 항목 모두 통과한 실행이 있음. 다만 마우스 메뉴 항목 테스트는 테스트 스크립트의 대기 시간 문제로 실행에 따라 실패한 적이 있음(앱 로그상 클릭은 정상 처리됨)
   - 성능(캐릭터 1개, 4코어 이상): CPU 약 0.6~1.2%, 작업 집합 약 220~260MB
   - 잔상 검사: 렌더 결과와 실제 창 내용을 비교해 잔상 픽셀 0

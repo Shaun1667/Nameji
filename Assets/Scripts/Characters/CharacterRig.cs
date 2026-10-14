@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Shimeji.Characters
 {
-    public enum RigKind { Humanoid, Generic }
+    public enum RigKind { Humanoid, Generic, Sprite2D }
 
     public sealed class RigException : Exception
     {

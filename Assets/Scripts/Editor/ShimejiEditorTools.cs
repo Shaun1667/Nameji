@@ -52,7 +52,75 @@ namespace Shimeji.EditorTools
   ""rigType"": ""generic""
 }
 ");
+            RenderSpriteSample(Path.Combine(CharactersDir, "SampleSprite", "image.png"));
+            File.WriteAllText(Path.Combine(CharactersDir, "SampleSprite", "character.json"),
+@"{
+  ""displayName"": ""Sample Sprite (2D)"",
+  ""heightPixels"": 150,
+  ""spriteFacing"": ""front""
+}
+");
             Debug.Log("[Shimeji] sample characters exported to " + CharactersDir);
+        }
+
+        /// <summary>
+        /// 2D 이미지 캐릭터 샘플: 3D 샘플 치비를 정면에서 렌더해 투명 배경 PNG로 저장한다 (자체 제작, 라이선스 문제 없음).
+        /// 팔을 살짝 벌린 자세로 그려서 자동 관절 감지가 팔을 찾을 수 있게 한다.
+        /// </summary>
+        public static void RenderSpriteSample(string path, int size = 512)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var go = SampleModelFactory.CreateChibi(withEmbeddedClip: false);
+            var camGo = new GameObject("SpriteSampleCamera");
+            var lightGo = new GameObject("SpriteSampleLight");
+            var rt = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32);
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            try
+            {
+                var rig = Shimeji.Characters.CharacterRigBuilder.Build(go, new Shimeji.Core.CharacterConfig { RigType = Shimeji.Core.RigType.Generic });
+                var poser = new Shimeji.Characters.PoseApplier(go.transform, rig.Bones);
+                var pose = new Shimeji.Core.PoseParams
+                {
+                    ArmL = new Shimeji.Core.PoseParams.Limb(42, 0, 15),
+                    ArmR = new Shimeji.Core.PoseParams.Limb(42, 0, 15),
+                    LegL = new Shimeji.Core.PoseParams.Limb(7, 0, 0),
+                    LegR = new Shimeji.Core.PoseParams.Limb(7, 0, 0),
+                };
+                poser.Apply(pose);
+                go.transform.rotation = Quaternion.Euler(0, 180, 0); // 정면이 카메라(-Z) 쪽을 보도록
+
+                var b = Shimeji.Characters.CharacterFactory.ComputeBounds(go);
+                var cam = camGo.AddComponent<Camera>();
+                cam.orthographic = true;
+                cam.orthographicSize = b.size.y * 0.54f;
+                cam.transform.position = new Vector3(b.center.x, b.center.y, -10f);
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color(0, 0, 0, 0);
+                cam.allowHDR = false;
+                cam.allowMSAA = false;
+                cam.targetTexture = rt;
+                var light = lightGo.AddComponent<Light>();
+                light.type = LightType.Directional;
+                light.intensity = 1.1f;
+                lightGo.transform.rotation = Quaternion.Euler(25f, -20f, 0f);
+
+                cam.Render();
+                var prev = RenderTexture.active;
+                RenderTexture.active = rt;
+                tex.ReadPixels(new Rect(0, 0, size, size), 0, 0, false);
+                tex.Apply();
+                RenderTexture.active = prev;
+                File.WriteAllBytes(path, tex.EncodeToPNG());
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+                UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(lightGo);
+                UnityEngine.Object.DestroyImmediate(tex);
+                rt.Release();
+                UnityEngine.Object.DestroyImmediate(rt);
+            }
         }
 
         public static void ExportGlb(GameObject go, string path)
@@ -117,7 +185,7 @@ namespace Shimeji.EditorTools
             // Hidden/Internal-Colored, UI/Default는 내장 리소스라 항상 포함됨 (목록에 넣으면 빌드가 실패한다)
             // Standard는 전체 배리언트가 들어가 런타임 메모리를 크게 쓰므로 빼고, 호환 경량 셰이더(Shimeji/Toon)를 쓴다.
             RemoveAlwaysIncludedShader("Standard");
-            AddAlwaysIncludedShaders("Shimeji/Toon", "UniGLTF/UniUnlit", "VRM10/MToon10");
+            AddAlwaysIncludedShaders("Shimeji/Toon", "Shimeji/Sprite", "UniGLTF/UniUnlit", "VRM10/MToon10");
             AssetDatabase.SaveAssets();
             Debug.Log("[Shimeji] project settings configured");
         }

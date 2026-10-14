@@ -25,6 +25,14 @@ namespace Shimeji.Core
         public float ArmSpreadBias = 8f;
         public bool LookAtCursor = true;
 
+        // ---- 2D 이미지 캐릭터 ----
+        /// <summary>그림이 보는 방향: front(정면), left, right. 진행 방향에 맞춰 좌우 반전할 때 쓴다.</summary>
+        public string SpriteFacing = "front";
+        /// <summary>관절 위치 덮어쓰기 (이미지 정규화 좌표 0..1, 좌상단 원점). 비어 있으면 자동 감지.</summary>
+        public Dictionary<string, Vec2> Joints = new Dictionary<string, Vec2>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>팔다리 본 애니메이션 세기 (0 = 통이미지만 출렁임, 1 = 기본).</summary>
+        public float SpriteLimbAmount = 1f;
+
         public const float MinHeight = 24f, MaxHeight = 1200f;
 
         public static CharacterConfig Default(string folderName)
@@ -98,6 +106,27 @@ namespace Shimeji.Core
             cfg.ColliderScale = MathUtil.Clamp(d.GetFloat("colliderScale", cfg.ColliderScale), 0.2f, 5f);
             cfg.ArmSpreadBias = MathUtil.Clamp(d.GetFloat("armSpreadBias", cfg.ArmSpreadBias), -45f, 45f);
             cfg.LookAtCursor = d.GetBool("lookAtCursor", cfg.LookAtCursor);
+
+            var facing = d.GetString("spriteFacing");
+            if (facing != null)
+            {
+                var f = facing.Trim().ToLowerInvariant();
+                if (f == "front" || f == "left" || f == "right") cfg.SpriteFacing = f;
+                else warnings?.Add($"unknown spriteFacing '{facing}', using front");
+            }
+            cfg.SpriteLimbAmount = MathUtil.Clamp(d.GetFloat("spriteLimbAmount", cfg.SpriteLimbAmount), 0f, 2f);
+            var joints = d.GetObject("joints");
+            if (joints != null)
+            {
+                foreach (var kv in joints)
+                {
+                    if (kv.Value is List<object> a && a.Count == 2 && a[0] is double x && a[1] is double y
+                        && x >= -0.5 && x <= 1.5 && y >= -0.5 && y <= 1.5)
+                        cfg.Joints[kv.Key] = new Vec2((float)x, (float)y);
+                    else
+                        warnings?.Add($"joints.{kv.Key} must be [x, y] in 0..1");
+                }
+            }
             return cfg;
         }
     }

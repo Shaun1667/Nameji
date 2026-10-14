@@ -62,7 +62,7 @@ namespace Shimeji.Characters
             BaseHeightPx = cfg.HeightPixels;
             Body = new CharacterBody { Height = cfg.HeightPixels, Width = Mathf.Clamp(Mathf.Max(sizeWorld.x, sizeWorld.z) * ppu * 0.6f, cfg.HeightPixels * 0.3f, cfg.HeightPixels * 0.6f) };
             _yaw = cfg.FacingYawDeg + cfg.ViewAngleDeg;
-            Visual.localRotation = Quaternion.Euler(0, _yaw, 0);
+            Visual.localRotation = loaded.IsSprite ? Quaternion.identity : Quaternion.Euler(0, _yaw, 0);
         }
 
         public void AttachBrain(BehaviorSelector selector)
@@ -160,10 +160,27 @@ namespace Shimeji.Characters
                 pos = grab + rot * (pos - grab);
             }
             transform.SetPositionAndRotation(pos, rot);
-            Visual.localRotation = Quaternion.Euler(0, _yaw, 0);
+            if (IsSprite)
+            {
+                // 2D: 회전 대신 좌우 반전 (그림이 보는 방향 기준)
+                int sign = Config.SpriteFacing == "left" ? -f : f;
+                if (Body.State == BodyState.CeilingAttached || Array.IndexOf(FrontKeys, key) >= 0) sign = _spriteSign; // 정면 동작 중엔 유지
+                _spriteSign = sign == 0 ? 1 : sign;
+                Visual.localRotation = Quaternion.identity;
+                Visual.localScale = new Vector3(_spriteSign * UserScale, UserScale, UserScale);
+            }
+            else
+            {
+                Visual.localRotation = Quaternion.Euler(0, _yaw, 0);
+            }
         }
 
-        /// <summary>화면 픽셀 기준 대략적인 캐릭터 사각형 (알파 히트테스트 대상 선택/디버그).</summary>
+        int _spriteSign = 1;
+
+        /// <summary>2D 이미지 캐릭터 여부와 정보.</summary>
+        public bool IsSprite => _loaded != null && _loaded.IsSprite;
+        public SpriteInfo Sprite => _loaded?.Sprite;
+
         /// <summary>마지막으로 Transform에 반영된 발 위치 (화면 픽셀). 순간이동 직후엔 Body.Position과 다를 수 있다.</summary>
         public Vec2 RenderedFootPx { get; private set; }
         public bool HasRendered { get; private set; }

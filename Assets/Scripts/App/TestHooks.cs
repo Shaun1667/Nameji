@@ -114,6 +114,10 @@ namespace Shimeji.App
                 case "screenshot":
                     _app.StartCoroutine(Capture(string.Join(" ", a, 1, a.Length - 1)));
                     return "ok";
+                case "jointedit": return app.BeginJointEdit(Need(a[1])) ? "ok" : "not a sprite";
+                case "jointmove": app.JointEditMove(a[1], new Vec2(P(a[2]), P(a[3]))); return "ok";
+                case "jointsave": app.JointEditSave(); return "ok";
+                case "jointcancel": app.JointEditCancel(); return "ok";
                 case "ghostcheck":
                     _app.StartCoroutine(GhostCheck());
                     return "pending";
@@ -175,6 +179,23 @@ namespace Shimeji.App
             UnityEngine.Object.Destroy(tex);
         }
 
+        static object SpriteJointsStatus(Characters.CharacterActor a)
+        {
+            if (!a.IsSprite) return null;
+            var d = new Dictionary<string, object>();
+            var info = a.Sprite;
+            var root = a.Oriented.childCount > 0 ? a.Oriented.GetChild(0) : a.Oriented;
+            foreach (var kv in info.Rig.Joints)
+            {
+                // 화면(데스크톱) 좌표: 휴식 포즈 기준 모델 위치 → 월드 → 픽셀
+                var w = root.TransformPoint(info.PixelToModel(kv.Value));
+                var px = ShimejiApp.Instance.Space.WorldToDesktop(new Vec2(w.x, w.y));
+                d[kv.Key] = new List<object> { Math.Round(px.X, 1), Math.Round(px.Y, 1) };
+            }
+            d["confidence"] = info.Rig.Confidence;
+            return d;
+        }
+
         Characters.CharacterActor Need(string key)
         {
             var a = _app.FindActor(key);
@@ -205,6 +226,8 @@ namespace Shimeji.App
                     ["animPlaying"] = a.Anim.CurrentKey,
                     ["source"] = a.Anim.CurrentSource.ToString(),
                     ["rig"] = a.Anim.RigKind.ToString(),
+                    ["sprite"] = a.IsSprite,
+                    ["joints"] = SpriteJointsStatus(a),
                     ["modelClips"] = new List<object>(a.Anim.ModelClipMap.Keys),
                     ["scale"] = a.UserScale,
                 });
@@ -227,6 +250,7 @@ namespace Shimeji.App
                 ["hiddenFullscreen"] = app.HiddenForFullscreen,
                 ["paused"] = app.PausedAll,
                 ["menuOpen"] = app.MenuOpen,
+                ["jointEdit"] = app.JointEditActive,
                 ["menuRect"] = new List<object> { app.MenuDesktopRect.Left, app.MenuDesktopRect.Top, app.MenuDesktopRect.Right, app.MenuDesktopRect.Bottom },
                 ["trayRunning"] = app.TrayRunning,
                 ["capturing"] = app.ClickThrough.Capturing,
