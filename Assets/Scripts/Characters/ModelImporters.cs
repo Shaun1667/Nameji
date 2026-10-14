@@ -136,8 +136,14 @@ namespace Shimeji.Characters
                     if (File.Exists(p)) return p;
                 }
             foreach (var f in Directory.GetFiles(folder))
-                if (SpriteModelBuilder.IsImage(f) && !string.Equals(Path.GetFileNameWithoutExtension(f), "icon", StringComparison.OrdinalIgnoreCase))
+            {
+                var stem = Path.GetFileNameWithoutExtension(f);
+                // icon.png(트레이용), skeleton.png(관절 설정 결과 미리보기)는 캐릭터 그림이 아니다
+                if (SpriteModelBuilder.IsImage(f) &&
+                    !string.Equals(stem, "icon", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(stem, SpriteSkeletonImage.FileStem, StringComparison.OrdinalIgnoreCase))
                     return f;
+            }
             return null;
         }
 

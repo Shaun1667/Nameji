@@ -8,6 +8,8 @@
         "Shimeji.Characters",
         "Shimeji.Platform.Win32",
         "Shimeji.Editor",
+        "Shimeji.App",
+        "UnityEngine.UI",
         "UniGLTF",
         "UniGLTF.Utils"
     ],

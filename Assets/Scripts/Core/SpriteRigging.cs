@@ -35,6 +35,60 @@ namespace Shimeji.Core
         {
             Top, Neck, Hips, ShoulderA, ElbowA, HandA, ShoulderB, ElbowB, HandB, HipA, KneeA, FootA, HipB, KneeB, FootB,
         };
+
+        /// <summary>관절 설정 화면의 안내 순서: 큰 관절 먼저, 팔꿈치/무릎은 마지막(기본은 자동 중간점).</summary>
+        public static readonly string[] GuidedOrder =
+        {
+            Top, Neck, Hips, ShoulderA, HandA, ShoulderB, HandB, HipA, FootA, HipB, FootB, ElbowA, ElbowB, KneeA, KneeB,
+        };
+
+        /// <summary>뼈대 선 (스켈레톤 표시용).</summary>
+        public static readonly (string a, string b)[] Links =
+        {
+            (Top, Neck), (Neck, Hips),
+            (Neck, ShoulderA), (ShoulderA, ElbowA), (ElbowA, HandA),
+            (Neck, ShoulderB), (ShoulderB, ElbowB), (ElbowB, HandB),
+            (Hips, HipA), (HipA, KneeA), (KneeA, FootA),
+            (Hips, HipB), (HipB, KneeB), (KneeB, FootB),
+        };
+
+        /// <summary>사용자에게 보여 줄 이름 (A = 화면 왼쪽, B = 화면 오른쪽).</summary>
+        public static string DisplayName(string joint)
+        {
+            switch (joint)
+            {
+                case Top: return "머리 꼭대기";
+                case Neck: return "목";
+                case Hips: return "골반 (엉덩이 중심)";
+                case ShoulderA: return "어깨 (화면 왼쪽)";
+                case ElbowA: return "팔꿈치 (화면 왼쪽)";
+                case HandA: return "손 (화면 왼쪽)";
+                case ShoulderB: return "어깨 (화면 오른쪽)";
+                case ElbowB: return "팔꿈치 (화면 오른쪽)";
+                case HandB: return "손 (화면 오른쪽)";
+                case HipA: return "다리 시작 (화면 왼쪽)";
+                case KneeA: return "무릎 (화면 왼쪽)";
+                case FootA: return "발 (화면 왼쪽)";
+                case HipB: return "다리 시작 (화면 오른쪽)";
+                case KneeB: return "무릎 (화면 오른쪽)";
+                case FootB: return "발 (화면 오른쪽)";
+            }
+            return joint;
+        }
+
+        /// <summary>팔꿈치/무릎: 따로 지정하지 않으면 양 끝의 중간점을 따라간다.</summary>
+        public static bool TryGetMidpointParents(string joint, out string a, out string b)
+        {
+            switch (joint)
+            {
+                case ElbowA: a = ShoulderA; b = HandA; return true;
+                case ElbowB: a = ShoulderB; b = HandB; return true;
+                case KneeA: a = HipA; b = FootA; return true;
+                case KneeB: a = HipB; b = FootB; return true;
+            }
+            a = b = null;
+            return false;
+        }
     }
 
     public sealed class SpriteRigResult

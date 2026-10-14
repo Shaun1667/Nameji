@@ -114,10 +114,15 @@ namespace Shimeji.App
                 case "screenshot":
                     _app.StartCoroutine(Capture(string.Join(" ", a, 1, a.Length - 1)));
                     return "ok";
-                case "jointedit": return app.BeginJointEdit(Need(a[1])) ? "ok" : "not a sprite";
-                case "jointmove": app.JointEditMove(a[1], new Vec2(P(a[2]), P(a[3]))); return "ok";
-                case "jointsave": app.JointEditSave(); return "ok";
-                case "jointcancel": app.JointEditCancel(); return "ok";
+                case "rigsetup":
+                {
+                    // rigsetup <폴더 이름> : 관절 설정 화면 열기
+                    var folder = System.IO.Path.Combine(app.CharactersRoot, a[1]);
+                    return app.OpenRigSetup(a[1], folder) ? "ok" : "cannot open";
+                }
+                case "rigset": app.Wizard.SetJointNormalized(a[1], new Vec2(P(a[2]), P(a[3]))); return "ok";
+                case "rigdone": app.Wizard.Finish(); return "ok";
+                case "rigskip": app.Wizard.Skip(); return "ok";
                 case "ghostcheck":
                     _app.StartCoroutine(GhostCheck());
                     return "pending";
@@ -250,7 +255,7 @@ namespace Shimeji.App
                 ["hiddenFullscreen"] = app.HiddenForFullscreen,
                 ["paused"] = app.PausedAll,
                 ["menuOpen"] = app.MenuOpen,
-                ["jointEdit"] = app.JointEditActive,
+                ["rigSetup"] = app.RigSetupName,
                 ["menuRect"] = new List<object> { app.MenuDesktopRect.Left, app.MenuDesktopRect.Top, app.MenuDesktopRect.Right, app.MenuDesktopRect.Bottom },
                 ["trayRunning"] = app.TrayRunning,
                 ["capturing"] = app.ClickThrough.Capturing,

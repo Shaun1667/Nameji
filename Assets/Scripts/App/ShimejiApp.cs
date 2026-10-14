@@ -78,7 +78,9 @@ namespace Shimeji.App
         TrayIcon _tray;
         CharacterFolderWatcher _watcher;
         OverlayUI _ui;
-        JointEditor _joints;
+        RigSetupWizard _wizard;
+        readonly Queue<(string name, string folder)> _rigQueue = new Queue<(string, string)>();
+        readonly HashSet<string> _rigSkipped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         DebugSurfaceRenderer _debug;
         TestHooks _testHooks;
         CharacterAssets _assets;
@@ -223,7 +225,7 @@ namespace Shimeji.App
         {
             if (_quitting) yield break;
             _ui = new OverlayUI(MainCamera);
-            _joints = _ui.CreateJointEditor(MainCamera);
+            _wizard = _ui.CreateRigWizard(MainCamera);
             LoadProfiles();
 
             // 플레이어 창이 완전히 만들어질 때까지 대기
@@ -403,10 +405,9 @@ namespace Shimeji.App
 
             var overlayPt = Space.DesktopToOverlayScreen(cursor).ToVector2();
             bool overMenu = _ui.Menu.Contains(overlayPt);
-            int hit = overMenu ? MenuTargetId : _joints.HitTest(cursor, overlayPt);
-            if (hit < 0) hit = HitTestCharacters(cursor);
-            // 관절 편집 중인 캐릭터 본체는 잡거나 클릭할 수 없다 (관절 점만 조작)
-            if (_joints.Active && hit == _joints.Actor.RuntimeId) hit = -1;
+            int hit = overMenu ? MenuTargetId
+                : _wizard.Contains(overlayPt) ? RigSetupWizard.TargetId
+                : HitTestCharacters(cursor);
 
             bool capture = _clickThrough.Update(hit >= 0, left || right);
             _window?.SetClickThrough(!capture);
@@ -421,7 +422,7 @@ namespace Shimeji.App
             _tracker.Update(Time.unscaledTimeAsDouble, cursor, left, right, hit, _events);
             foreach (var e in _events) Dispatch(e, overlayPt);
             _ui.Menu.UpdateHover(overlayPt);
-            _joints.UpdateHover(overlayPt);
+            _wizard.UpdateHover(overlayPt);
         }
 
         public int HitTestCharacters(Vec2 cursor)
@@ -458,9 +459,9 @@ namespace Shimeji.App
         void Dispatch(PointerEvent e, Vector2 overlayPt)
         {
             if (e.Type != PointerEventType.DragMove) Log.Info("pointer " + e);
-            if (_joints.Owns(e.TargetId))
+            if (e.TargetId == RigSetupWizard.TargetId)
             {
-                _joints.Dispatch(e, overlayPt);
+                _wizard.Dispatch(e, p => Space.DesktopToOverlayScreen(p).ToVector2());
                 return;
             }
             if (e.TargetId == MenuTargetId)
@@ -510,7 +511,7 @@ namespace Shimeji.App
             _debug.CharacterRects.Clear();
             foreach (var a in _actors.ToArray())
             {
-                a.Brain.Paused = PausedAll || HiddenForFullscreen || a == _joints.Actor;
+                a.Brain.Paused = PausedAll || HiddenForFullscreen;
                 Vector3? lt = null;
                 if (look.HasValue && (a.Body.Position - _lastCursor).Length < 700f) lt = look.Value + Vector3.forward * a.Depth;
                 try
@@ -527,7 +528,7 @@ namespace Shimeji.App
 
         void UpdateUI()
         {
-            _joints.Update();
+            ProcessRigQueue();
             float now = Time.unscaledTime;
             foreach (var a in _actors)
             {
@@ -610,7 +611,7 @@ namespace Shimeji.App
                 var r = b.ScreenRect;
                 _regions.Add(new RectInt((int)r.xMin - 4, H - (int)r.yMax - 4, (int)r.width + 8, (int)r.height + 8));
             }
-            _joints.AddRegions(_regions, H);
+            _wizard.AddRegions(_regions, H);
             if (_ui.Menu.IsOpen)
             {
                 var m = _ui.Menu.ScreenRectOverlay;
@@ -643,11 +644,13 @@ namespace Shimeji.App
                 switch (c.Kind)
                 {
                     case FolderChangeKind.Added:
-                        _ = LoadCharacterAsync(c.Name, c.Path);
+                        if (NeedsRigSetup(c.Name, c.Path)) QueueRigSetup(c.Name, c.Path);
+                        else _ = LoadCharacterAsync(c.Name, c.Path);
                         break;
                     case FolderChangeKind.Changed:
                         RemoveCharactersOfFolder(c.Name);
-                        _ = LoadCharacterAsync(c.Name, c.Path);
+                        if (NeedsRigSetup(c.Name, c.Path)) QueueRigSetup(c.Name, c.Path);
+                        else _ = LoadCharacterAsync(c.Name, c.Path);
                         break;
                     case FolderChangeKind.Removed:
                         RemoveCharactersOfFolder(c.Name);
@@ -775,7 +778,6 @@ namespace Shimeji.App
         {
             if (a == null) return;
             if (_ui.Menu.TargetRuntimeId == a.RuntimeId) _ui.Menu.Close();
-            if (_joints.Actor == a) _joints.End();
             if (_tracker.DragTarget == a.RuntimeId) _tracker.Cancel();
             if (_bubbles.TryGetValue(a.RuntimeId, out var b)) { b.Destroy(); _bubbles.Remove(a.RuntimeId); }
             _actors.Remove(a);
@@ -808,48 +810,110 @@ namespace Shimeji.App
                 new ContextMenuView.Item(PausedAll ? "전체 재개" : "전체 일시정지", () => SetPaused(!PausedAll)),
                 new ContextMenuView.Item("닫기", null),
             };
-            if (a.IsSprite) items.Insert(items.Count - 1, new ContextMenuView.Item("관절 편집 (2D)", () => BeginJointEdit(a)));
+            if (a.IsSprite) items.Insert(items.Count - 1, new ContextMenuView.Item("관절 다시 설정 (2D)", () => OpenRigSetup(a.FolderName, Path.GetDirectoryName(a.Sprite.ImagePath))));
             _ui.Menu.Open(a.RuntimeId, overlayPt, items);
         }
 
         // ======================================================================
-        // 2D 관절 편집
+        // 2D 관절(앵커) 설정 화면
         // ======================================================================
 
-        public bool BeginJointEdit(CharacterActor a)
+        public bool RigSetupActive => _wizard != null && _wizard.Active;
+        public string RigSetupName => _wizard?.CurrentName;
+        public RigSetupWizard Wizard => _wizard;
+
+        /// <summary>2D 이미지 캐릭터인데 저장된 관절이 없으면 true (실행 시 먼저 설정 화면을 띄운다).</summary>
+        bool NeedsRigSetup(string name, string folder)
         {
-            if (a == null || !a.IsSprite) return false;
-            _ui.Menu.Close();
-            _joints.Begin(a, Space, joints => SaveJoints(a, joints), () => SaveJoints(a, null), null);
-            ShowBubble(a, "관절을 드래그해서 옮겨 주세요", 3f);
-            return _joints.Active;
+            if (_rigSkipped.Contains(name)) return false;
+            var model = ModelImporterRegistry.FindModelFile(folder);
+            if (model == null || !SpriteModelBuilder.IsImage(model)) return false;
+            var cfgPath = Path.Combine(folder, "character.json");
+            if (!File.Exists(cfgPath)) return true;
+            try
+            {
+                var cfg = CharacterConfig.Parse(File.ReadAllText(cfgPath), name);
+                return cfg.Joints.Count == 0;
+            }
+            catch (Exception) { return true; }
         }
 
-        public bool JointEditActive => _joints != null && _joints.Active;
-
-        /// <summary>테스트/자동화용: 편집 중인 관절 하나를 데스크톱 좌표로 옮긴다.</summary>
-        public void JointEditMove(string joint, Vec2 desktop)
+        void QueueRigSetup(string name, string folder)
         {
-            int i = Array.IndexOf(SpriteJoints.All, joint);
-            if (!_joints.Active || i < 0) return;
-            int id = JointEditor.HandleTargetBase + i;
-            _joints.Dispatch(new PointerEvent { Type = PointerEventType.DragStart, TargetId = id, Position = desktop }, default);
-            _joints.Dispatch(new PointerEvent { Type = PointerEventType.DragEnd, TargetId = id, Position = desktop }, default);
+            foreach (var q in _rigQueue) if (string.Equals(q.name, name, StringComparison.OrdinalIgnoreCase)) return;
+            if (RigSetupActive && string.Equals(_wizard.CurrentName, name, StringComparison.OrdinalIgnoreCase)) return;
+            _rigQueue.Enqueue((name, folder));
+            Log.Info($"[{name}] waiting for joint setup");
         }
 
-        public void JointEditSave()
+        void ProcessRigQueue()
         {
-            if (_joints.Active) _joints.Save();
+            if (RigSetupActive || _rigQueue.Count == 0) return;
+            var (name, folder) = _rigQueue.Dequeue();
+            if (Directory.Exists(folder)) OpenRigSetup(name, folder);
         }
 
-        public void JointEditCancel() => _joints.End();
+        /// <summary>관절 설정 화면 열기. 완료 → character.json 저장 + skeleton.png → (폴더 감시가) 캐릭터 로드.</summary>
+        public bool OpenRigSetup(string name, string folder)
+        {
+            Texture2D tex = null;
+            try
+            {
+                _ui.Menu.Close();
+                var model = ModelImporterRegistry.FindModelFile(folder);
+                if (model == null || !SpriteModelBuilder.IsImage(model)) return false;
+                var cfgPath = Path.Combine(folder, "character.json");
+                var cfg = File.Exists(cfgPath) ? CharacterConfig.Parse(File.ReadAllText(cfgPath), name) : CharacterConfig.Default(name);
+                tex = SpriteModelBuilder.LoadTexture(model);
+                var detected = SpriteModelBuilder.DetectJoints(tex, cfg);
+                var area = PrimaryWorkAreaOverlay();
+                var t = tex;
+                _wizard.Open(new RigSetupWizard.Request
+                {
+                    Name = name,
+                    Folder = folder,
+                    ImagePath = model,
+                    Texture = tex,
+                    Detected = detected,
+                    OnDone = joints =>
+                    {
+                        _rigSkipped.Remove(name);
+                        SaveJointsToFolder(name, folder, joints, t);
+                        UnityGlue.SafeDestroy(t);
+                        // character.json이 바뀌었으므로 폴더 감시(Changed)가 0.5초 뒤 캐릭터를 (다시) 로드한다.
+                    },
+                    OnSkip = () =>
+                    {
+                        UnityGlue.SafeDestroy(t);
+                        _rigSkipped.Add(name);
+                        if (FindActor(name) == null) _ = LoadCharacterAsync(name, folder);
+                    },
+                }, area);
+                Log.Info($"[{name}] joint setup opened (auto confidence {detected.Confidence:0.00})");
+                return true;
+            }
+            catch (Exception e)
+            {
+                if (tex != null) UnityGlue.SafeDestroy(tex);
+                Log.UserError($"'{name}' 이미지를 열 수 없습니다: {e.Message}");
+                return false;
+            }
+        }
 
-        /// <summary>character.json의 "joints"를 쓰거나(null이면 지움) → 폴더 감시가 캐릭터를 다시 로드한다.</summary>
-        void SaveJoints(CharacterActor a, Dictionary<string, Vec2> normalized)
+        /// <summary>주 모니터 작업영역 (오버레이 스크린 좌표, 아래가 0).</summary>
+        Rect PrimaryWorkAreaOverlay()
+        {
+            var m = DesktopWorld.PrimaryOrFirst(World.Monitors);
+            var w = m?.WorkArea ?? Space.Overlay;
+            var bl = Space.DesktopToOverlayScreen(new Vec2(w.Left, w.Bottom));
+            return new Rect(bl.X, bl.Y, w.Width, w.Height);
+        }
+
+        /// <summary>character.json의 "joints"를 쓰고(null이면 지움) skeleton.png를 만든다. 폴더 감시가 캐릭터를 다시 로드한다.</summary>
+        void SaveJointsToFolder(string name, string folder, Dictionary<string, Vec2> normalized, Texture2D tex)
         {
             try
             {
-                var folder = Path.GetDirectoryName(a.Sprite.ImagePath);
                 var path = Path.Combine(folder, "character.json");
                 Dictionary<string, object> d = null;
                 if (File.Exists(path))
@@ -868,7 +932,14 @@ namespace Shimeji.App
                 }
                 SaveSettings(); // 다시 로드돼도 같은 자리에 나타나도록 위치 저장
                 File.WriteAllText(path, MiniJson.Serialize(d));
-                Log.Info($"[{a.InstanceKey}] joints {(normalized == null ? "reset to auto" : "saved")} → {path}");
+                if (normalized != null && tex != null)
+                {
+                    var px = new Dictionary<string, Vec2>();
+                    foreach (var kv in normalized) px[kv.Key] = new Vec2(kv.Value.X * tex.width, kv.Value.Y * tex.height);
+                    var img = SpriteSkeletonImage.Save(folder, tex, px);
+                    Log.Info($"[{name}] skeleton image → {img}");
+                }
+                Log.Info($"[{name}] joints {(normalized == null ? "reset to auto" : "saved")} → {path}");
             }
             catch (Exception e)
             {

@@ -46,7 +46,7 @@ namespace Shimeji.App.UI
 
         public SpeechBubble CreateBubble() => new SpeechBubble(Canvas.transform, _font);
 
-        public JointEditor CreateJointEditor(Camera cam) => new JointEditor(Canvas.transform, _font, cam);
+        public RigSetupWizard CreateRigWizard(Camera cam) => new RigSetupWizard(Canvas.transform, _font, cam);
 
         public static Text MakeText(Transform parent, Font font, string text, int size, Color color, TextAnchor anchor)
         {

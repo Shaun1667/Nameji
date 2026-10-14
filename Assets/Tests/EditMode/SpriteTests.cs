@@ -218,6 +218,59 @@ namespace Shimeji.Tests
         }
 
         [Test]
+        public void SkeletonImageIsDrawnAndIgnoredAsCharacterImage()
+        {
+            var folder = Path.Combine(_dir, "Sprite");
+            var tex = SpriteModelBuilder.LoadTexture(Path.Combine(folder, "image.png"));
+            try
+            {
+                var rig = SpriteModelBuilder.DetectJoints(tex, null);
+                var path = SpriteSkeletonImage.Save(folder, tex, rig.Joints);
+                Assert.IsTrue(File.Exists(path));
+                var sk = new Texture2D(2, 2);
+                sk.LoadImage(File.ReadAllBytes(path));
+                Assert.AreEqual(tex.width, sk.width);
+                // 목 관절 위치에 관절 점 색(노랑)이 그려져 있다
+                var neck = rig.J(SpriteJoints.Neck);
+                var c = sk.GetPixel((int)neck.X, tex.height - 1 - (int)neck.Y);
+                Assert.Greater(c.r, 0.9f);
+                Assert.Greater(c.g, 0.75f);
+                Assert.Less(c.b, 0.4f);
+                UnityEngine.Object.DestroyImmediate(sk);
+
+                // image.png가 없어도 skeleton.png는 캐릭터 그림으로 고르지 않는다
+                var only = Path.Combine(_dir, "OnlySkeleton");
+                Directory.CreateDirectory(only);
+                File.Copy(path, Path.Combine(only, "skeleton.png"), true);
+                Assert.IsNull(ModelImporterRegistry.FindModelFile(only));
+                // 이미지 이름이 달라도 인식
+                File.Copy(Path.Combine(folder, "image.png"), Path.Combine(only, "my_drawing.png"), true);
+                Assert.AreEqual(Path.Combine(only, "my_drawing.png"), ModelImporterRegistry.FindModelFile(only));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(tex);
+            }
+        }
+
+        [Test]
+        public void SavedJointsOverrideDetection()
+        {
+            var tex = SpriteModelBuilder.LoadTexture(Path.Combine(_dir, "Sprite", "image.png"));
+            try
+            {
+                var cfg = CharacterConfig.Parse("{ \"joints\": { \"handA\": [0.05, 0.5] } }", "S");
+                var rig = SpriteModelBuilder.DetectJoints(tex, cfg);
+                Assert.AreEqual(0.05f * tex.width, rig.J(SpriteJoints.HandA).X, 0.01f);
+                Assert.AreEqual(0.5f * tex.height, rig.J(SpriteJoints.HandA).Y, 0.01f);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(tex);
+            }
+        }
+
+        [Test]
         public void OpaqueImageIsRejected()
         {
             Assert.Catch<Exception>(() => Run(CharacterFactory.CreateFromFolderAsync(Path.Combine(_dir, "Opaque"), _assets)));

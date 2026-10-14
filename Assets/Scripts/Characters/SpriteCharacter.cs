@@ -54,7 +54,8 @@ namespace Shimeji.Characters
             return new AlphaMask(w, h, a);
         }
 
-        public static LoadedModel Build(string imagePath, CharacterConfig cfg)
+        /// <summary>이미지 파일을 읽기 가능한 텍스처로 불러온다. 실패하면 예외.</summary>
+        public static Texture2D LoadTexture(string imagePath)
         {
             var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false) { name = Path.GetFileName(imagePath) };
             if (!tex.LoadImage(File.ReadAllBytes(imagePath), false))
@@ -64,6 +65,24 @@ namespace Shimeji.Characters
             }
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.filterMode = FilterMode.Bilinear;
+            return tex;
+        }
+
+        /// <summary>관절 설정 화면용: 자동 감지 + (있으면) 저장된 관절 적용. 투명 배경이 아니면 예외.</summary>
+        public static SpriteRigResult DetectJoints(Texture2D tex, CharacterConfig cfg)
+        {
+            var mask = MaskFromTexture(tex);
+            bool hasAlpha = false;
+            foreach (var b in mask.Alpha) if (b < 250) { hasAlpha = true; break; }
+            if (!hasAlpha) throw new InvalidDataException("image has no transparency (use a PNG with transparent background)");
+            var rig = SpriteJointDetector.Detect(mask);
+            if (cfg != null && cfg.Joints.Count > 0) SpriteJointDetector.ApplyOverrides(rig, cfg.Joints, mask.Width, mask.Height);
+            return rig;
+        }
+
+        public static LoadedModel Build(string imagePath, CharacterConfig cfg)
+        {
+            var tex = LoadTexture(imagePath);
             try
             {
                 return Build(tex, cfg, imagePath);
