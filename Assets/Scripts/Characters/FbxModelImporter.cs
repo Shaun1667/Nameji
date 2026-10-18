@@ -41,7 +41,7 @@ namespace Shimeji.Characters
         public bool CanLoad(string path) =>
             Array.IndexOf(SupportedExtensions, Path.GetExtension(path).ToLowerInvariant()) >= 0;
 
-        /// <summary>네이티브 assimp.dll을 명시적 경로로 로드 (에디터: Assets/Plugins/x86_64, 빌드: Shimeji_Data/Plugins/x86_64).</summary>
+        /// <summary>네이티브 assimp.dll을 명시적 경로로 로드 (에디터: Assets/Plugins/x86_64, 빌드: DesktopMate_Data/Plugins/x86_64).</summary>
         public static void EnsureLibrary()
         {
             lock (LibGate)

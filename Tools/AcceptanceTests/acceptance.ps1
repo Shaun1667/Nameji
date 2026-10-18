@@ -67,11 +67,11 @@ function Ghost([string]$label) {
 function BodyCenter($a) { @([int]$a.x, [int]($a.y - $a.height * 0.45)) }
 
 $origCursor = New-Object W+POINT; [W]::GetCursorPos([ref]$origCursor) | Out-Null
-Get-Process Shimeji -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process DesktopMate -ErrorAction SilentlyContinue | Stop-Process -Force
 Remove-Item "$B\Logs" -Recurse -ErrorAction SilentlyContinue
 foreach ($d in "HotBlob", "BrokenModel") { if (Test-Path "$B\Characters\$d") { Remove-Item "$B\Characters\$d" -Recurse } }
 
-$app = Start-Process "$B\Shimeji.exe" -ArgumentList '-shimeji-test' -PassThru
+$app = Start-Process "$B\DesktopMate.exe" -ArgumentList '-shimeji-test' -PassThru
 $formProc = $null
 try {
     # ---------------- M1: 오버레이 ----------------
@@ -223,7 +223,7 @@ try {
 
     Ghost 'after hot reload'
     # ---------------- M7: 단일 인스턴스 ----------------
-    $second = Start-Process "$B\Shimeji.exe" -PassThru
+    $second = Start-Process "$B\DesktopMate.exe" -PassThru
     $exited = $second.WaitForExit(15000)
     Report "M7 single instance (second launch exits)" $exited "exited=$exited"
     if (-not $exited) { $second | Stop-Process -Force }

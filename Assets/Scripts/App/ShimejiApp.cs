@@ -1184,7 +1184,7 @@ namespace Shimeji.App
 
         void OnUserVisibleError(string message)
         {
-            _tray?.ShowBalloon("Shimeji", message, true);
+            _tray?.ShowBalloon(Application.productName, message, true);
         }
 
         // ======================================================================

@@ -162,7 +162,7 @@ namespace Shimeji.Platform.Win32
                     _classRegistered = true;
                 }
                 uint ex = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | (topmost ? WS_EX_TOPMOST : 0);
-                Hwnd = CreateWindowExW(ex, "ShimejiLayeredOverlay", "Shimeji", WS_POPUP,
+                Hwnd = CreateWindowExW(ex, "ShimejiLayeredOverlay", "DesktopMate", WS_POPUP,
                     (int)b.Left, (int)b.Top, (int)b.Width, (int)b.Height, IntPtr.Zero, IntPtr.Zero, hInst, IntPtr.Zero);
                 if (Hwnd == IntPtr.Zero) Log.Error("CreateWindowEx failed: " + Marshal.GetLastWin32Error());
             }
