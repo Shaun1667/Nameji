@@ -104,9 +104,11 @@ namespace Shimeji.Characters
         {
             new VrmModelImporter(),
             new GltfModelImporter(),
+            new FbxModelImporter(),
         };
 
-        public static readonly string[] Extensions = { ".vrm", ".glb", ".gltf" };
+        /// <summary>지원 3D 모델 확장자 (우선순위 순). FBX/OBJ/DAE는 Assimp 런타임 로더.</summary>
+        public static readonly string[] Extensions = { ".vrm", ".glb", ".gltf", ".fbx", ".obj", ".dae" };
 
         public static IModelImporter Find(string path)
         {
@@ -147,14 +149,20 @@ namespace Shimeji.Characters
             return null;
         }
 
-        public static async Task<List<AnimationClip>> LoadExtraClipsAsync(string folder)
+        /// <summary>animations/ 폴더의 GLB/glTF/FBX에서 클립을 읽는다. FBX 클립 이름이 일반적이면(mixamo.com 등) 파일 이름을 쓴다.</summary>
+        public static async Task<List<AnimationClip>> LoadExtraClipsAsync(string dir)
         {
             var clips = new List<AnimationClip>();
-            var dir = Path.Combine(folder, "animations");
-            if (!Directory.Exists(dir)) return clips;
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return clips;
             foreach (var f in Directory.GetFiles(dir))
             {
                 var ext = Path.GetExtension(f).ToLowerInvariant();
+                if (ext == ".fbx" || ext == ".dae")
+                {
+                    try { clips.AddRange(await FbxModelImporter.LoadAnimationClipsAsync(f)); }
+                    catch (Exception e) { Log.Warn($"animation file '{f}' skipped: {e.Message}"); }
+                    continue;
+                }
                 if (ext != ".glb" && ext != ".gltf") continue;
                 try
                 {

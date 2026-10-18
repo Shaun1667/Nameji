@@ -32,6 +32,7 @@ namespace Shimeji.Characters
         int _dirty;             // Interlocked
         double _lastScanTime = double.NegativeInfinity;
         readonly Dictionary<string, string> _known = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, string> _paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         readonly HashSet<string> _pendingLocked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public CharacterFolderWatcher(string root)
@@ -108,11 +109,16 @@ namespace Shimeji.Characters
             {
                 if (Directory.Exists(Root))
                 {
-                    foreach (var dir in Directory.GetDirectories(Root))
+                    // 항목 = 하위 폴더 + 루트에 그냥 놓인 모델/이미지 파일 (예: Models/Hero.fbx)
+                    var entries = new List<string>(Directory.GetDirectories(Root));
+                    foreach (var f in Directory.GetFiles(Root))
+                        if (CharacterPaths.IsLooseEntry(f)) entries.Add(f);
+                    foreach (var dir in entries)
                     {
-                        var name = Path.GetFileName(dir);
+                        var name = CharacterPaths.Name(dir);
                         if (disabled != null && disabled.Contains(name)) continue;
-                        var model = ModelImporterRegistry.FindModelFile(dir);
+                        if (present.ContainsKey(name)) { Log.Warn($"duplicate character name '{name}' in {Root}, skipping {dir}"); continue; }
+                        var model = CharacterPaths.ModelFile(dir);
                         if (model == null) continue;
                         if (IsLocked(model))
                         {
@@ -141,13 +147,16 @@ namespace Shimeji.Characters
                 else if (sig != kv.Value.sig)
                     changes.Add(new FolderChange { Kind = FolderChangeKind.Changed, Name = kv.Key, Path = kv.Value.path });
                 _known[kv.Key] = kv.Value.sig;
+                _paths[kv.Key] = kv.Value.path;
             }
             var removed = new List<string>();
             foreach (var k in _known.Keys) if (!present.ContainsKey(k)) removed.Add(k);
             foreach (var k in removed)
             {
                 _known.Remove(k);
-                changes.Add(new FolderChange { Kind = FolderChangeKind.Removed, Name = k, Path = Path.Combine(Root, k) });
+                _paths.TryGetValue(k, out var oldPath);
+                _paths.Remove(k);
+                changes.Add(new FolderChange { Kind = FolderChangeKind.Removed, Name = k, Path = oldPath ?? Path.Combine(Root, k) });
             }
         }
 
@@ -161,9 +170,9 @@ namespace Shimeji.Characters
                 sb.Append(fi.Name).Append(':').Append(fi.Length).Append(':').Append(fi.LastWriteTimeUtc.Ticks).Append(';');
             }
             Add(model);
-            Add(Path.Combine(dir, "character.json"));
-            var anim = Path.Combine(dir, "animations");
-            if (Directory.Exists(anim))
+            Add(CharacterPaths.ConfigFile(dir));
+            var anim = CharacterPaths.AnimationsDir(dir);
+            if (anim != null && Directory.Exists(anim))
                 foreach (var f in Directory.GetFiles(anim)) Add(f);
             return sb.ToString();
         }

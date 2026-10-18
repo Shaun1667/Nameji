@@ -18,6 +18,8 @@ namespace Shimeji.Characters
         public string InstanceKey { get; set; }
         /// <summary>Characters/ 아래 폴더 이름.</summary>
         public string FolderName { get; set; }
+        /// <summary>캐릭터 항목 경로 (Characters/이름 폴더 또는 Models/이름.fbx 같은 단일 파일).</summary>
+        public string SourcePath { get; set; }
         public CharacterConfig Config { get; private set; }
         public CharacterRig Rig { get; private set; }
         public CharacterAnimator Anim { get; private set; }

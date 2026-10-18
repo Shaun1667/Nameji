@@ -39,7 +39,10 @@ namespace Shimeji.Characters
             var rig = new CharacterRig();
             var nodes = new List<BoneNode>();
             var byName = new Dictionary<string, Transform>(StringComparer.Ordinal);
-            Collect(modelRoot.transform, 0, nodes, byName, isRoot: true);
+            // 스킨 메시가 실제로 쓰는 뼈(와 그 조상)만 후보로 삼는다.
+            // FBX에는 "Head" 같은 이름의 메시 노드가 뼈와 따로 있는 경우가 많아, 그걸 머리 뼈로 잘못 고르지 않도록.
+            var skeleton = SkinBonesAndAncestors(modelRoot.transform);
+            Collect(modelRoot.transform, 0, nodes, byName, isRoot: true, skeleton);
 
             rig.Mapping = BoneMapper.Map(nodes, cfg.BoneMapOverride);
             rig.Warnings.AddRange(rig.Mapping.Warnings);
@@ -93,14 +96,30 @@ namespace Shimeji.Characters
             return rig;
         }
 
-        static void Collect(Transform t, int depth, List<BoneNode> nodes, Dictionary<string, Transform> byName, bool isRoot)
+        static void Collect(Transform t, int depth, List<BoneNode> nodes, Dictionary<string, Transform> byName, bool isRoot, HashSet<Transform> skeleton)
         {
-            if (!isRoot)
+            if (!isRoot && (skeleton == null || skeleton.Contains(t)))
             {
                 nodes.Add(new BoneNode(t.name, depth));
                 if (!byName.ContainsKey(t.name)) byName[t.name] = t;
             }
-            foreach (Transform c in t) Collect(c, depth + 1, nodes, byName, false);
+            foreach (Transform c in t) Collect(c, depth + 1, nodes, byName, false, skeleton);
+        }
+
+        /// <summary>모든 SkinnedMeshRenderer의 본과 그 조상. 스킨 메시가 없으면 null(전체 사용).</summary>
+        static HashSet<Transform> SkinBonesAndAncestors(Transform root)
+        {
+            HashSet<Transform> set = null;
+            foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                foreach (var b in smr.bones)
+                {
+                    if (b == null || b == smr.transform) continue; // 가중치 없는 정점용 자기 자신 본은 제외
+                    set ??= new HashSet<Transform>();
+                    for (var t = b; t != null && t != root; t = t.parent) if (!set.Add(t)) break;
+                }
+            }
+            return set;
         }
 
         static Avatar TryBuildHumanAvatar(GameObject root, CharacterRig rig, out string error)

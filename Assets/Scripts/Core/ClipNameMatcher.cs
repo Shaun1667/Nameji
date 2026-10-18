@@ -59,11 +59,19 @@ namespace Shimeji.Core
             var s = cut >= 0 ? clipName.Substring(cut + 1) : clipName;
             var sb = new StringBuilder(s.Length);
             foreach (char c in s) if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
-            var r = sb.ToString();
+            var r = TrimDigits(sb.ToString());
             // 흔한 접미사 제거
             foreach (var suffix in new[] { "loop", "anim", "animation" })
                 if (r.Length > suffix.Length && r.EndsWith(suffix)) r = r.Substring(0, r.Length - suffix.Length);
-            return r;
+            return TrimDigits(r);
+        }
+
+        /// <summary>끝 숫자 제거: "walk01" → "walk", "ninjarun2" → "ninjarun". 숫자뿐이면 그대로.</summary>
+        static string TrimDigits(string s)
+        {
+            int n = s.Length;
+            while (n > 0 && char.IsDigit(s[n - 1])) n--;
+            return n > 0 ? s.Substring(0, n) : s;
         }
 
         public static bool Matches(string clipName, string key)

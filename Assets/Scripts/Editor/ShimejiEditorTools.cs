@@ -42,24 +42,21 @@ namespace Shimeji.EditorTools
   ""behaviorProfile"": ""default"",
   ""enableSpringBones"": true,
   ""colliderPreset"": ""chibi""
-}
-");
+}\r\n");
             ExportGlb(SampleModelFactory.CreateBlob(), Path.Combine(CharactersDir, "SampleBlob", "model.glb"));
             File.WriteAllText(Path.Combine(CharactersDir, "SampleBlob", "character.json"),
 @"{
   ""displayName"": ""Sample Blob"",
   ""heightPixels"": 110,
   ""rigType"": ""generic""
-}
-");
+}\r\n");
             RenderSpriteSample(Path.Combine(CharactersDir, "SampleSprite", "image.png"));
             File.WriteAllText(Path.Combine(CharactersDir, "SampleSprite", "character.json"),
 @"{
   ""displayName"": ""Sample Sprite (2D)"",
   ""heightPixels"": 150,
   ""spriteFacing"": ""front""
-}
-");
+}\r\n");
             Debug.Log("[Shimeji] sample characters exported to " + CharactersDir);
         }
 
@@ -287,6 +284,20 @@ namespace Shimeji.EditorTools
             }
             // 샘플 캐릭터를 실행 파일 옆 Characters/로 복사
             CopyDirectory(CharactersDir, Path.Combine(BuildDir, "Characters"));
+            // 파일을 그냥 넣으면 바로 캐릭터가 되는 Models/ 폴더
+            var models = Path.Combine(BuildDir, "Models");
+            Directory.CreateDirectory(models);
+            File.WriteAllText(Path.Combine(models, "README.txt"),
+                "이 폴더에 캐릭터 파일을 그냥 넣으면 실행 중에도 바로 나타납니다. (파일 하나 = 캐릭터 하나)\r\n" +
+                "\r\n" +
+                "지원 형식: .fbx .vrm .glb .gltf .obj .dae / 2D 이미지 .png .jpg .bmp .tga\r\n" +
+                "- FBX 텍스처는 같은 폴더, textures/ 폴더, 또는 <이름>.fbm/ 폴더에서 찾습니다. (내장 텍스처도 지원)\r\n" +
+                "- 사람형 뼈대(Mixamo, VRM, Unreal 이름 등)면 걷기/앉기/매달리기 등 공용 애니메이션이 자동 적용됩니다.\r\n" +
+                "- 파일 안 애니메이션 이름(또는 파일 이름)이 Idle, Walk, Run, Sit, Jump, Fall, Wave, Dance 등으로 끝나면 그 동작에 우선 사용됩니다.\r\n" +
+                "- 설정은 같은 이름의 .json (예: Hero.fbx → Hero.json)에 둡니다. 키 높이: { \"heightPixels\": 200 }\r\n" +
+                "- 파일을 지우면 캐릭터도 사라지고, 덮어쓰면 다시 불러옵니다.\r\n" +
+                "\r\n" +
+                "애니메이션을 여러 개 붙이려면 Characters/<이름>/ 폴더에 모델과 animations/ 폴더(FBX/GLB 클립)를 넣으세요.\r\n");
         }
 
         static void CopyDirectory(string src, string dst)

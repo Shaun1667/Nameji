@@ -34,6 +34,8 @@ namespace Shimeji.App
 
         public string AppRoot { get; private set; }
         public string CharactersRoot { get; private set; }
+        /// <summary>FBX/VRM/GLB/PNG 파일을 폴더 없이 그대로 넣는 곳 (파일 하나 = 캐릭터 하나).</summary>
+        public string ModelsRoot { get; private set; }
         public string LogsRoot { get; private set; }
         public AppSettings Settings { get; private set; }
         public ScreenSpace Space { get; private set; }
@@ -76,7 +78,7 @@ namespace Shimeji.App
         RollingFileLogSink _fileLog;
         UnityLogSink _unityLog;
         TrayIcon _tray;
-        CharacterFolderWatcher _watcher;
+        readonly List<CharacterFolderWatcher> _watchers = new List<CharacterFolderWatcher>();
         OverlayUI _ui;
         RigSetupWizard _wizard;
         readonly Queue<(string name, string folder)> _rigQueue = new Queue<(string, string)>();
@@ -92,7 +94,7 @@ namespace Shimeji.App
         readonly ClickThroughController _clickThrough = new ClickThroughController();
         readonly PointerTracker _tracker = new PointerTracker();
         readonly List<PointerEvent> _events = new List<PointerEvent>();
-        readonly List<string> _knownFolders = new List<string>();
+        readonly List<(string name, string entry)> _knownFolders = new List<(string, string)>();
 
         float _worldTimer, _fullscreenTimer, _topmostTimer, _saveTimer, _trayMenuTimer;
         Vec2 _lastCursor;
@@ -113,6 +115,7 @@ namespace Shimeji.App
             Instance = this;
             AppRoot = Path.GetDirectoryName(Application.dataPath) ?? ".";
             CharactersRoot = Path.Combine(AppRoot, "Characters");
+            ModelsRoot = Path.Combine(AppRoot, "Models");
             LogsRoot = Path.Combine(AppRoot, "Logs");
 
             _unityLog = new UnityLogSink();
@@ -277,8 +280,7 @@ namespace Shimeji.App
             _debug.ShowSurfaces = Settings.ShowDebugSurfaces;
             _debug.ShowFakeWindows = !_isRealOverlay;
 
-            _watcher = new CharacterFolderWatcher(CharactersRoot);
-            _watcher.Start();
+            StartWatchers();
             LoadBuiltinPrefabs();
 
 #if !UNITY_EDITOR
@@ -636,8 +638,9 @@ namespace Shimeji.App
 
         void HandleWatcher()
         {
-            if (_watcher == null) return;
-            var changes = _watcher.Poll(Time.unscaledTimeAsDouble, Settings.DisabledCharacters);
+            if (_watchers.Count == 0) return;
+            var changes = new List<FolderChange>();
+            foreach (var w in _watchers) changes.AddRange(w.Poll(Time.unscaledTimeAsDouble, Settings.DisabledCharacters));
             foreach (var c in changes)
             {
                 Log.Info("characters folder change: " + c);
@@ -660,15 +663,33 @@ namespace Shimeji.App
             RefreshKnownFolders();
         }
 
+        /// <summary>Characters/(폴더 단위)와 Models/(파일을 그냥 넣는 곳) 감시 시작. 다시 호출하면 재시작.</summary>
+        void StartWatchers()
+        {
+            foreach (var w in _watchers) w.Dispose();
+            _watchers.Clear();
+            foreach (var root in new[] { CharactersRoot, ModelsRoot })
+            {
+                var w = new CharacterFolderWatcher(root);
+                w.Start();
+                _watchers.Add(w);
+            }
+        }
+
         void RefreshKnownFolders()
         {
             if (Time.frameCount % 60 != 0) return;
             _knownFolders.Clear();
             try
             {
-                if (Directory.Exists(CharactersRoot))
-                    foreach (var d in Directory.GetDirectories(CharactersRoot))
-                        if (ModelImporterRegistry.FindModelFile(d) != null) _knownFolders.Add(Path.GetFileName(d));
+                foreach (var root in new[] { CharactersRoot, ModelsRoot })
+                {
+                    if (!Directory.Exists(root)) continue;
+                    foreach (var d in Directory.GetDirectories(root))
+                        if (CharacterPaths.ModelFile(d) != null) _knownFolders.Add((CharacterPaths.Name(d), d));
+                    foreach (var f in Directory.GetFiles(root))
+                        if (CharacterPaths.IsLooseEntry(f)) _knownFolders.Add((CharacterPaths.Name(f), f));
+                }
             }
             catch (Exception) { /* 다음 기회 */ }
         }
@@ -682,7 +703,7 @@ namespace Shimeji.App
                 var actor = await CharacterFactory.CreateFromFolderAsync(folder, _assets);
                 if (this == null || _quitting) { actor.DestroyCharacter(); return null; }
                 actor.gameObject.name = "Character:" + id;
-                Register(actor, id, name, at);
+                Register(actor, id, name, at, folder);
                 return actor;
             }
             catch (Exception e)
@@ -717,10 +738,11 @@ namespace Shimeji.App
             }
         }
 
-        void Register(CharacterActor actor, string instanceId, string folderName, Vec2? at)
+        void Register(CharacterActor actor, string instanceId, string folderName, Vec2? at, string source = null)
         {
             actor.InstanceKey = instanceId;
             actor.FolderName = folderName;
+            actor.SourcePath = source;
             var defs = _profiles.TryGetValue(actor.Config.BehaviorProfile, out var d) ? d : _profiles["default"];
             if (!_profiles.ContainsKey(actor.Config.BehaviorProfile))
                 Log.Warn($"[{instanceId}] behavior profile '{actor.Config.BehaviorProfile}' not found, using default");
@@ -810,7 +832,7 @@ namespace Shimeji.App
                 new ContextMenuView.Item(PausedAll ? "전체 재개" : "전체 일시정지", () => SetPaused(!PausedAll)),
                 new ContextMenuView.Item("닫기", null),
             };
-            if (a.IsSprite) items.Insert(items.Count - 1, new ContextMenuView.Item("관절 다시 설정 (2D)", () => OpenRigSetup(a.FolderName, Path.GetDirectoryName(a.Sprite.ImagePath))));
+            if (a.IsSprite) items.Insert(items.Count - 1, new ContextMenuView.Item("관절 다시 설정 (2D)", () => OpenRigSetup(a.FolderName, a.SourcePath)));
             _ui.Menu.Open(a.RuntimeId, overlayPt, items);
         }
 
@@ -826,9 +848,9 @@ namespace Shimeji.App
         bool NeedsRigSetup(string name, string folder)
         {
             if (_rigSkipped.Contains(name)) return false;
-            var model = ModelImporterRegistry.FindModelFile(folder);
+            var model = CharacterPaths.ModelFile(folder);
             if (model == null || !SpriteModelBuilder.IsImage(model)) return false;
-            var cfgPath = Path.Combine(folder, "character.json");
+            var cfgPath = CharacterPaths.ConfigFile(folder);
             if (!File.Exists(cfgPath)) return true;
             try
             {
@@ -860,9 +882,9 @@ namespace Shimeji.App
             try
             {
                 _ui.Menu.Close();
-                var model = ModelImporterRegistry.FindModelFile(folder);
+                var model = CharacterPaths.ModelFile(folder);
                 if (model == null || !SpriteModelBuilder.IsImage(model)) return false;
-                var cfgPath = Path.Combine(folder, "character.json");
+                var cfgPath = CharacterPaths.ConfigFile(folder);
                 var cfg = File.Exists(cfgPath) ? CharacterConfig.Parse(File.ReadAllText(cfgPath), name) : CharacterConfig.Default(name);
                 tex = SpriteModelBuilder.LoadTexture(model);
                 var detected = SpriteModelBuilder.DetectJoints(tex, cfg);
@@ -914,7 +936,7 @@ namespace Shimeji.App
         {
             try
             {
-                var path = Path.Combine(folder, "character.json");
+                var path = CharacterPaths.ConfigFile(folder);
                 Dictionary<string, object> d = null;
                 if (File.Exists(path))
                 {
@@ -936,7 +958,8 @@ namespace Shimeji.App
                 {
                     var px = new Dictionary<string, Vec2>();
                     foreach (var kv in normalized) px[kv.Key] = new Vec2(kv.Value.X * tex.width, kv.Value.Y * tex.height);
-                    var img = SpriteSkeletonImage.Save(folder, tex, px);
+                    var img = CharacterPaths.SkeletonFile(folder);
+                    File.WriteAllBytes(img, SpriteSkeletonImage.RenderPng(tex, px));
                     Log.Info($"[{name}] skeleton image → {img}");
                 }
                 Log.Info($"[{name}] joints {(normalized == null ? "reset to auto" : "saved")} → {path}");
@@ -954,8 +977,8 @@ namespace Shimeji.App
 
         public void Clone(CharacterActor a)
         {
-            var folder = Path.Combine(CharactersRoot, a.FolderName);
-            if (!Directory.Exists(folder)) { ShowBubble(a, "복제할 수 없어요", 1.5f); return; }
+            var folder = a.SourcePath;
+            if (string.IsNullOrEmpty(folder) || CharacterPaths.ModelFile(folder) == null) { ShowBubble(a, "복제할 수 없어요", 1.5f); return; }
             _cloneCounter++;
             var pos = new Vec2(a.Body.Position.X + a.Body.Width, a.Body.Position.Y - a.Body.Height);
             _ = LoadCharacterAsync(a.FolderName, folder, $"{a.FolderName}#{_cloneCounter}", pos);
@@ -987,7 +1010,7 @@ namespace Shimeji.App
             CharacterBase = 1000,
             Scale50 = 2001, Scale75, Scale100, Scale150, Scale200,
             ActivitySlow = 2101, ActivityNormal, ActivityActive,
-            AlwaysOnTop = 2201, Pause, DebugSurfaces, OpenCharacters, OpenLogs, AutoStart, AlphaHitTest, LookAt, Reload, Fps60,
+            AlwaysOnTop = 2201, Pause, DebugSurfaces, OpenCharacters, OpenLogs, AutoStart, AlphaHitTest, LookAt, Reload, Fps60, OpenModels,
             Quit = 2299,
         }
 
@@ -1020,7 +1043,7 @@ namespace Shimeji.App
             var chars = new List<TrayMenuItem>();
             for (int i = 0; i < _knownFolders.Count && i < 900; i++)
             {
-                var n = _knownFolders[i];
+                var n = _knownFolders[i].name;
                 chars.Add(TrayMenuItem.Item((int)Cmd.CharacterBase + i, n, !Settings.DisabledCharacters.Contains(n)));
             }
             if (chars.Count == 0) chars.Add(TrayMenuItem.Item(0, "(Characters 폴더가 비어 있음)", false, false));
@@ -1049,6 +1072,7 @@ namespace Shimeji.App
                 TrayMenuItem.Item((int)Cmd.Fps60, "60 FPS", Settings.TargetFrameRate == 60),
                 TrayMenuItem.Item((int)Cmd.DebugSurfaces, "디버그: 표면 표시", Settings.ShowDebugSurfaces),
                 TrayMenuItem.Sep(),
+                TrayMenuItem.Item((int)Cmd.OpenModels, "Models 폴더 열기 (FBX/VRM/GLB/PNG 넣기)"),
                 TrayMenuItem.Item((int)Cmd.OpenCharacters, "캐릭터 폴더 열기"),
                 TrayMenuItem.Item((int)Cmd.Reload, "캐릭터 다시 읽기"),
                 TrayMenuItem.Item((int)Cmd.OpenLogs, "로그 폴더 열기"),
@@ -1065,7 +1089,7 @@ namespace Shimeji.App
             if (id >= (int)Cmd.CharacterBase && id < (int)Cmd.CharacterBase + 900)
             {
                 int i = id - (int)Cmd.CharacterBase;
-                if (i < _knownFolders.Count) ToggleCharacter(_knownFolders[i]);
+                if (i < _knownFolders.Count) ToggleCharacter(_knownFolders[i].name);
                 return;
             }
             switch ((Cmd)id)
@@ -1095,12 +1119,11 @@ namespace Shimeji.App
                     break;
                 case Cmd.DebugSurfaces: SetDebugSurfaces(!Settings.ShowDebugSurfaces); break;
                 case Cmd.OpenCharacters: OpenFolder(CharactersRoot); break;
+                case Cmd.OpenModels: OpenFolder(ModelsRoot); break;
                 case Cmd.OpenLogs: OpenFolder(LogsRoot); break;
                 case Cmd.Reload:
                     foreach (var a in _actors.ToList()) RemoveActor(a);
-                    _watcher?.Dispose();
-                    _watcher = new CharacterFolderWatcher(CharactersRoot);
-                    _watcher.Start();
+                    StartWatchers();
                     break;
                 case Cmd.AutoStart:
                 {
@@ -1127,13 +1150,13 @@ namespace Shimeji.App
         {
             if (Settings.DisabledCharacters.Remove(name))
             {
-                _watcher?.Forget(name);
+                foreach (var w in _watchers) w.Forget(name);
             }
             else
             {
                 Settings.DisabledCharacters.Add(name);
                 RemoveCharactersOfFolder(name);
-                _watcher?.Forget(name);
+                foreach (var w in _watchers) w.Forget(name);
             }
         }
 
@@ -1184,7 +1207,8 @@ namespace Shimeji.App
             SaveSettings();
             Log.Info("quit");
             _tray?.Dispose();
-            _watcher?.Dispose();
+            foreach (var w in _watchers) w.Dispose();
+            _watchers.Clear();
             _presenter?.Dispose();
             _layered?.Dispose();
             _testHooks?.Dispose();

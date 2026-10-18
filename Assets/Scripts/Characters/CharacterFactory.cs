@@ -25,16 +25,17 @@ namespace Shimeji.Characters
         /// <summary>폴더 하나를 로드해 캐릭터를 만든다. 실패 시 예외 (호출자가 로그를 남기고 계속 진행).</summary>
         public static async Task<CharacterActor> CreateFromFolderAsync(string folder, CharacterAssets assets)
         {
-            var name = Path.GetFileName(folder.TrimEnd('/', '\\'));
+            // 항목 = 캐릭터 폴더 또는 Models/에 그냥 넣은 파일 하나
+            var name = CharacterPaths.Name(folder);
             var warnings = new List<string>();
-            var cfgPath = Path.Combine(folder, "character.json");
+            var cfgPath = CharacterPaths.ConfigFile(folder);
             var cfg = File.Exists(cfgPath)
                 ? CharacterConfig.Parse(File.ReadAllText(cfgPath), name, warnings)
                 : CharacterConfig.Default(name);
             foreach (var w in warnings) Log.Warn($"[{name}] {w}");
 
-            var modelPath = ModelImporterRegistry.FindModelFile(folder);
-            if (modelPath == null) throw new FileNotFoundException($"no model file (model.vrm/.glb/.gltf or image.png) in '{folder}'");
+            var modelPath = CharacterPaths.ModelFile(folder);
+            if (modelPath == null) throw new FileNotFoundException($"no model file (vrm/glb/gltf/fbx or image.png) in '{folder}'");
 
             // 2D 이미지 캐릭터
             if (SpriteModelBuilder.IsImage(modelPath))
@@ -59,7 +60,7 @@ namespace Shimeji.Characters
             List<AnimationClip> extra;
             try
             {
-                extra = await ModelImporterRegistry.LoadExtraClipsAsync(folder);
+                extra = await ModelImporterRegistry.LoadExtraClipsAsync(CharacterPaths.AnimationsDir(folder));
             }
             catch (Exception e)
             {

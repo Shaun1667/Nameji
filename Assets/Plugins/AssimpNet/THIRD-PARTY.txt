@@ -1,0 +1,3 @@
+﻿AssimpNetter 6.0.5 (https://github.com/Saalvage/AssimpNetter) - MIT, see LICENSE-AssimpNetter-and-Assimp.txt
+Assimp native library (assimp.dll in Plugins/x86_64) - BSD 3-Clause, see LICENSE-AssimpNetter-and-Assimp.txt
+System.Runtime.CompilerServices.Unsafe 6.1.2 (NuGet, Microsoft) - MIT (https://licenses.nuget.org/MIT)

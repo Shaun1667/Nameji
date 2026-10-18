@@ -10,7 +10,8 @@ SD(치비) 3D 모델 파일을 `Characters/` 폴더에 넣으면 리그를 자�
 
 1. `Builds/Win64/Shimeji.exe`를 실행합니다.
 2. 샘플 캐릭터 세 개(`SampleChibi` 3D 휴머노이드, `SampleBlob` 3D 제네릭, `SampleSprite` 2D 이미지)가 화면 위에서 떨어져 내려옵니다.
-3. 캐릭터를 바꾸거나 추가하려면 `Builds/Win64/Characters/<이름>/model.vrm`(또는 `.glb`, `.gltf`)을 넣습니다. 재시작 없이 바로 나타납니다.
+3. 캐릭터를 추가하는 가장 쉬운 방법: **`Builds/Win64/Models/` 폴더에 FBX/VRM/GLB/PNG 파일을 그냥 넣습니다.** 실행 중에도 몇 초 안에 나타나고, 파일을 지우면 사라집니다. (트레이 → **Models 폴더 열기**)
+   - 애니메이션 파일을 여러 개 붙이고 싶으면 `Builds/Win64/Characters/<이름>/model.fbx` + `animations/` 폴더 방식을 씁니다.
 4. 종료는 작업표시줄 트레이 아이콘 → **종료**로 합니다.
 
 ## 빌드 방법
@@ -39,19 +40,37 @@ SD(치비) 3D 모델 파일을 `Characters/` 폴더에 넣으면 리그를 자�
 
 설정은 `%USERPROFILE%/AppData/LocalLow/ShimejiProject/Shimeji/settings.json`에 저장됩니다. 캐릭터 위치도 함께 저장되어 다음 실행 때 복원됩니다.
 
+## Models 폴더 (파일만 넣기)
+
+```
+<실행 파일 폴더>/Models/
+  ├─ Hero.fbx          ← 파일 하나 = 캐릭터 하나 (이름은 파일 이름)
+  ├─ Hero.json         ← 선택: 같은 이름의 설정 파일
+  ├─ Hero.fbm/ 또는 textures/   ← 선택: FBX 외부 텍스처
+  ├─ Miku.vrm
+  └─ Cat.png           ← 2D 이미지 (처음 넣으면 관절 설정 창이 뜸)
+```
+
+- 지원 형식: `.fbx .vrm .glb .gltf .obj .dae`, 2D 이미지 `.png .jpg .bmp .tga`
+- **FBX는 빌드된 앱에서 런타임으로 읽습니다** (Assimp). 메시/스킨/머티리얼 색/텍스처(내장, 같은 폴더, `textures/`, `<이름>.fbm/`, png/jpg/bmp/tga)와 내장 애니메이션을 가져옵니다.
+- 사람형 뼈대(Mixamo `mixamorig:*`, Bip001, VRM, Unreal, Blender 이름 등)면 휴머노이드 아바타를 만들어 공용 애니메이션(걷기/앉기/매달리기 등)을 그대로 씁니다. 아니면 제네릭(절차 애니메이션)으로 움직입니다.
+- 클립 이름이 `mixamo.com`, `Take 001`처럼 의미 없으면 **파일 이름**을 클립 이름으로 씁니다. 그래서 Mixamo에서 받은 `NinjaRun.fbx`를 넣으면 내장 달리기 동작이 Run 상태에 자동으로 쓰입니다. 움직임이 전혀 없는 테이크(바인드 포즈)는 버립니다.
+- 같은 이름이 `Characters/`와 `Models/`에 둘 다 있으면 먼저 찾은 것만 쓰고 경고를 남깁니다.
+- 뼈대가 없는 애니메이션 전용 FBX는 캐릭터가 아니므로 오류 알림만 뜹니다. 이런 파일은 `Characters/<이름>/animations/`에 넣으세요.
+
 ## 캐릭터 폴더 규약
 
 ```
 <실행 파일 폴더>/Characters/
   └─ <캐릭터 이름>/
-       ├─ model.vrm | model.glb | model.gltf   (필수, 런타임 로딩)
+       ├─ model.vrm | .glb | .gltf | .fbx | .obj | .dae | .png   (필수, 런타임 로딩)
        ├─ character.json                        (선택, 설정 덮어쓰기)
-       └─ animations/*.glb                      (선택, 모델 전용 클립)
+       └─ animations/*.glb | *.fbx | *.dae      (선택, 모델 전용 클립)
 ```
 
 - **VRM 0.x / 1.0**: UniVRM으로 읽습니다. 휴머노이드 아바타와 VRM 스프링본을 그대로 씁니다.
 - **GLB/glTF**: UniGLTF로 읽습니다. 본 이름(Mixamo, Bip001, VRM `J_Bip_*`, Blender `.L/.R` 등)으로 휴머노이드 아바타를 런타임에 만들고, 만들 수 없으면 제네릭(절차 애니메이션)으로 동작합니다.
-- **FBX**(에디터 전용): `Assets/Characters/`에 넣으면 휴머노이드로 임포트되고 `Assets/Resources/BuiltinCharacters/`에 프리팹이 만들어져 빌드에 포함됩니다. 같은 이름의 `.json`은 설정으로 쓰입니다.
+- **FBX/OBJ/DAE**: 빌드된 앱에서 Assimp로 런타임 로딩합니다(위 Models 폴더 설명 참고). 에디터에서 `Assets/Characters/`에 넣으면 기존처럼 Unity 임포터로 프리팹을 만들어 빌드에 포함할 수도 있습니다.
 - 모델 내장 클립이나 `animations/` 클립의 이름이 상태 키와 맞으면 공용 클립보다 우선합니다. 대소문자는 무시하고 접두사는 허용합니다(예: `chibi_wave` → Wave). 일부 키만 있으면 그 키만 바뀌고 나머지는 공용 클립을 씁니다.
 - 잘못된 파일은 앱이 죽지 않습니다. 트레이 알림과 `Logs/`에 기록만 남깁니다.
 
@@ -155,7 +174,7 @@ Tools/AcceptanceTests/  Windows 빌드 수용 테스트 스크립트
 
 ## 테스트 결과
 
-- **EditMode 74개 전부 통과** (2D: 관절 감지/폴백/덮어쓰기, 메시/가중치 규칙, 실제 PNG 로딩·포즈, 불투명 이미지 거부 포함): 좌표 왕복(음수 좌표 모니터), 표면 생성/창 필터/가림 처리, 물리(착지, 창 추종, 최소화 시 낙하, 벽 타기 → 창 위/천장, 던지기, 복구), 행동 선택(가중치, 조건, 쿨다운, 고정 시드), 본 매핑(Mixamo/Bip001/VRM/Blender/임의 이름), JSON 파싱, 입력 판정, 실제 GLB 로딩(휴머노이드/제네릭/모델 클립 우선/깨진 파일), 폴더 감시, Win32 스모크, **20분 방치 시뮬레이션**(창 이동/최소화/Z순서 변경/던지기 포함, 시드 3개)
+- **EditMode 79개 전부 통과** (FBX: Models 폴더 파일 항목/감시, 런타임 FBX → 휴머노이드·크기·방향·공용 클립 재생, 클립 이름 규칙, TGA 디코더, 실제 Mixamo FBX 2개 휴머노이드 판정 + 내장 Run 클립 인식 / 2D: 관절 감지/폴백/덮어쓰기, 메시/가중치 규칙, 실제 PNG 로딩·포즈, 불투명 이미지 거부 포함): 좌표 왕복(음수 좌표 모니터), 표면 생성/창 필터/가림 처리, 물리(착지, 창 추종, 최소화 시 낙하, 벽 타기 → 창 위/천장, 던지기, 복구), 행동 선택(가중치, 조건, 쿨다운, 고정 시드), 본 매핑(Mixamo/Bip001/VRM/Blender/임의 이름), JSON 파싱, 입력 판정, 실제 GLB 로딩(휴머노이드/제네릭/모델 클립 우선/깨진 파일), 폴더 감시, Win32 스모크, **20분 방치 시뮬레이션**(창 이동/최소화/Z순서 변경/던지기 포함, 시드 3개)
 - **Windows 빌드 수용 테스트** (`Tools/AcceptanceTests/acceptance.ps1`): 25개 항목 모두 통과한 실행이 있음. 다만 마우스 메뉴 항목 테스트는 테스트 스크립트의 대기 시간 문제로 실행에 따라 실패한 적이 있음(앱 로그상 클릭은 정상 처리됨)
   - 성능(캐릭터 1개, 4코어 이상): CPU 약 0.6~1.2%, 작업 집합 약 220~260MB
   - 잔상 검사: 렌더 결과와 실제 창 내용을 비교해 잔상 픽셀 0
@@ -183,5 +202,6 @@ powershell -ExecutionPolicy Bypass -File Tools/AcceptanceTests/acceptance.ps1
 ## 사용한 패키지 / 에셋
 
 - **UniVRM v0.131.3** (`com.vrmc.gltf`, `com.vrmc.vrm`, MIT): VRM/glTF 런타임 로딩, VRM 스프링본, 샘플 GLB 내보내기
+- **AssimpNetter 6.0.5** (MIT) + **Assimp** 네이티브 `assimp.dll` (BSD-3) + System.Runtime.CompilerServices.Unsafe (MIT): 빌드에서 FBX/OBJ/DAE 런타임 로딩. 라이선스 전문은 `Assets/Plugins/AssimpNet/` 참고
 - Unity 내장 패키지: uGUI(메뉴/말풍선), Test Framework(EditMode 테스트), Timeline(UniVRM 의존성)
 - 애니메이션 클립과 샘플 모델은 모두 이 프로젝트에서 코드로 생성했습니다(서드파티 모션/모델 없음). `Assets/Animations/Library/LICENSES.md` 참고
