@@ -145,7 +145,7 @@ namespace Shimeji.EditorTools
         public static void ConfigureProjectSettings()
         {
             PlayerSettings.companyName = "ShimejiProject";
-            PlayerSettings.productName = "DesktopMate";
+            PlayerSettings.productName = "DesktopMascot";
             PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
             PlayerSettings.resizableWindow = false;
             PlayerSettings.runInBackground = true;
@@ -267,15 +267,18 @@ namespace Shimeji.EditorTools
         {
             ConfigureProjectSettings();
             Directory.CreateDirectory(BuildDir);
-            // 예전 이름(Shimeji.exe)으로 만든 빌드가 남아 있으면 헷갈리지 않게 지운다
-            var oldExe = Path.Combine(BuildDir, "Shimeji.exe");
-            if (File.Exists(oldExe)) File.Delete(oldExe);
-            var oldData = Path.Combine(BuildDir, "Shimeji_Data");
-            if (Directory.Exists(oldData)) Directory.Delete(oldData, true);
+            // 예전 이름(Shimeji.exe, DesktopMate.exe)으로 만든 빌드가 남아 있으면 헷갈리지 않게 지운다
+            foreach (var old in new[] { "Shimeji", "DesktopMate" })
+            {
+                var oldExe = Path.Combine(BuildDir, old + ".exe");
+                if (File.Exists(oldExe)) File.Delete(oldExe);
+                var oldData = Path.Combine(BuildDir, old + "_Data");
+                if (Directory.Exists(oldData)) Directory.Delete(oldData, true);
+            }
             var options = new BuildPlayerOptions
             {
                 scenes = new[] { ScenePath },
-                locationPathName = Path.Combine(BuildDir, "DesktopMate.exe"),
+                locationPathName = Path.Combine(BuildDir, "DesktopMascot.exe"),
                 target = BuildTarget.StandaloneWindows64,
                 targetGroup = BuildTargetGroup.Standalone,
                 options = BuildOptions.None,

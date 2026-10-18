@@ -8,7 +8,7 @@ SD(치비) 3D 모델 파일을 `Characters/` 폴더에 넣으면 리그를 자�
 
 ## 빠른 시작 (빌드 사용)
 
-1. `Builds/Win64/DesktopMate.exe`를 실행합니다.
+1. `Builds/Win64/DesktopMascot.exe`를 실행합니다.
 2. 샘플 캐릭터 세 개(`SampleChibi` 3D 휴머노이드, `SampleBlob` 3D 제네릭, `SampleSprite` 2D 이미지)가 화면 위에서 떨어져 내려옵니다.
 3. 캐릭터를 추가하는 가장 쉬운 방법: **`Builds/Win64/Models/` 폴더에 FBX/VRM/GLB/PNG 파일을 그냥 넣습니다.** 실행 중에도 몇 초 안에 나타나고, 파일을 지우면 사라집니다. (트레이 → **Models 폴더 열기**)
    - 애니메이션 파일을 여러 개 붙이고 싶으면 `Builds/Win64/Characters/<이름>/model.fbx` + `animations/` 폴더 방식을 씁니다.
@@ -139,7 +139,7 @@ Characters/MyDrawing/
 
 ### 행동 프로필
 
-`DesktopMate_Data/StreamingAssets/Behaviors/default.json`을 고치거나 복사해서 캐릭터별 행동을 정의합니다. 각 항목은 가중치, 지속 시간, 속도, 조건(`NearEdge`, `WallAdjacent`, `!BlockedLeft` 등), 다음 행동 후보, 쿨다운을 가집니다. 원조 시메지의 behaviors XML과 같은 역할입니다.
+`DesktopMascot_Data/StreamingAssets/Behaviors/default.json`을 고치거나 복사해서 캐릭터별 행동을 정의합니다. 각 항목은 가중치, 지속 시간, 속도, 조건(`NearEdge`, `WallAdjacent`, `!BlockedLeft` 등), 다음 행동 후보, 쿨다운을 가집니다. 원조 시메지의 behaviors XML과 같은 역할입니다.
 
 ## 구조
 
